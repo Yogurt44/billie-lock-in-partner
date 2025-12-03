@@ -57,7 +57,7 @@ export const FooterSection = () => {
           {/* Footer links */}
           <div className="mt-16 pt-8 border-t border-primary-foreground/10">
             <p className="text-sm text-primary-foreground/50">
-              © 2025 Lock In. built for ppl who are done making excuses 🥶
+              © 2025 Lock In. built for ppl who are done making excuses.
             </p>
           </div>
         </motion.div>
