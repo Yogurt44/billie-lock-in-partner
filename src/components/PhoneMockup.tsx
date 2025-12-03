@@ -2,11 +2,11 @@ import { motion } from "framer-motion";
 
 const messages = [
   { from: "user", text: "yo i needa lock in bro 😭", delay: 0 },
-  { from: "bot", text: "yo what should I call u 😭", delay: 0.3 },
+  { from: "bot", text: "aight unc, what should I call u 😭", delay: 0.3 },
   { from: "user", text: "Marcus", delay: 0.6 },
-  { from: "bot", text: "ok bet Marcus. what's ur ONE non-negotiable habit this winter? be fr.", delay: 0.9 },
-  { from: "user", text: "go to the gym 4x a week", delay: 1.2 },
-  { from: "bot", text: "say less. ur 1 Thing is: go to the gym 4x a week 🔒 text 'check in' whenever u wanna be held accountable.", delay: 1.5 },
+  { from: "bot", text: "bet. now drop your goals for the next 3 months. list as many as u want. be delulu but realistic.", delay: 0.9 },
+  { from: "user", text: "gym 4x a week, read 2 books, no more doom scrolling", delay: 1.2 },
+  { from: "bot", text: "say less. ur winter lock-in goals are: gym 4x a week, read 2 books, no more doom scrolling 🔒 text 'check in' whenever u want accountability.", delay: 1.5 },
 ];
 
 export const PhoneMockup = () => {

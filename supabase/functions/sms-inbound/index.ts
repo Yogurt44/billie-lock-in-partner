@@ -10,9 +10,9 @@ const corsHeaders = {
 const userStates: Record<string, {
   phone: string;
   name?: string;
-  habit?: string;
-  onboardingStep: 'awaiting_name' | 'awaiting_habit' | 'onboarded' | 'awaiting_checkin_response';
-  lastCheckInState?: 'yes' | 'no' | null;
+  goals?: string;
+  onboardingStep: 0 | 1 | 2;
+  awaitingCheckIn: boolean;
 }> = {};
 
 // Stub for OpenAI - you can wire this up later
@@ -25,13 +25,13 @@ async function generateAIResponse(prompt: string, context: string): Promise<stri
 
 // Gen Z blunt funny responses
 const RESPONSES = {
-  welcome: "yo what should I call u 😭",
-  afterName: (name: string) => `ok bet ${name}. what's ur ONE non-negotiable habit this winter? be fr.`,
-  afterHabit: (habit: string) => `say less. ur 1 Thing is: ${habit} 🔒 text 'check in' whenever u wanna be held accountable.`,
-  checkInPrompt: "Did u do ur 1 Thing today??? YES or NO.",
-  checkInYes: "ok slay 🔥 u locked in today.",
-  checkInNo: "bro 😭😭 what happened. it's fine we lock in again tmrw.",
-  alreadyOnboarded: (habit: string) => `ur 1 Thing is: ${habit} 🔒 text 'check in' to be held accountable fr.`,
+  welcome: "aight unc, what should I call u 😭",
+  afterName: (name: string) => `bet. now drop your goals for the next 3 months. list as many as u want. be delulu but realistic.`,
+  afterGoals: (goals: string) => `say less. ur winter lock-in goals are: ${goals} 🔒\ntext 'check in' whenever u want accountability.`,
+  checkInPrompt: "did u get closer to ANY of your goals today???\nYES or NO — don't lie.",
+  checkInYes: "ok slay 🔥 ur actually locked in.",
+  checkInNo: "bro be fr 😭 it's fine, we lock in tomorrow.",
+  alreadyOnboarded: (goals: string) => `ur winter lock-in goals are: ${goals} 🔒\ntext 'check in' whenever u want accountability.`,
   unknownResponse: "yo just text 'check in' when ur ready to lock in 🔒",
 };
 
@@ -73,65 +73,64 @@ serve(async (req) => {
 
     // Get or create user state
     if (!userStates[from]) {
-      // New user - start onboarding
+      // New user - start onboarding at step 0
       console.log(`[SMS Inbound] New user: ${from}`);
       userStates[from] = {
         phone: from,
-        onboardingStep: 'awaiting_name',
+        onboardingStep: 0,
+        awaitingCheckIn: false,
       };
       responseMessage = RESPONSES.welcome;
     } else {
       const user = userStates[from];
       console.log(`[SMS Inbound] Existing user state:`, user);
 
-      switch (user.onboardingStep) {
-        case 'awaiting_name':
-          // User is providing their name
-          user.name = message.trim();
-          user.onboardingStep = 'awaiting_habit';
-          responseMessage = RESPONSES.afterName(user.name);
-          console.log(`[SMS Inbound] Name set: ${user.name}`);
-          break;
+      // Check if awaiting check-in response first
+      if (user.awaitingCheckIn) {
+        if (normalizedMessage === 'yes' || normalizedMessage === 'y' || normalizedMessage === 'yeah' || normalizedMessage === 'yep' || normalizedMessage === 'yea') {
+          user.awaitingCheckIn = false;
+          responseMessage = RESPONSES.checkInYes;
+          console.log(`[SMS Inbound] Check-in: YES`);
+        } else if (normalizedMessage === 'no' || normalizedMessage === 'n' || normalizedMessage === 'nope' || normalizedMessage === 'nah') {
+          user.awaitingCheckIn = false;
+          responseMessage = RESPONSES.checkInNo;
+          console.log(`[SMS Inbound] Check-in: NO`);
+        } else {
+          responseMessage = "yo just say YES or NO 💀";
+        }
+      } else {
+        // Handle based on onboarding step
+        switch (user.onboardingStep) {
+          case 0:
+            // User is providing their name
+            user.name = message.trim();
+            user.onboardingStep = 1;
+            responseMessage = RESPONSES.afterName(user.name);
+            console.log(`[SMS Inbound] Name set: ${user.name}`);
+            break;
 
-        case 'awaiting_habit':
-          // User is providing their habit
-          user.habit = message.trim();
-          user.onboardingStep = 'onboarded';
-          responseMessage = RESPONSES.afterHabit(user.habit);
-          console.log(`[SMS Inbound] Habit set: ${user.habit}`);
-          break;
+          case 1:
+            // User is providing their goals
+            user.goals = message.trim();
+            user.onboardingStep = 2;
+            responseMessage = RESPONSES.afterGoals(user.goals);
+            console.log(`[SMS Inbound] Goals set: ${user.goals}`);
+            break;
 
-        case 'onboarded':
-          // User is onboarded - check for "check in"
-          if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
-            user.onboardingStep = 'awaiting_checkin_response';
-            responseMessage = RESPONSES.checkInPrompt;
-            console.log(`[SMS Inbound] Check-in requested`);
-          } else {
-            responseMessage = RESPONSES.alreadyOnboarded(user.habit || 'your habit');
-          }
-          break;
+          case 2:
+            // User is onboarded - check for "check in"
+            if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
+              user.awaitingCheckIn = true;
+              responseMessage = RESPONSES.checkInPrompt;
+              console.log(`[SMS Inbound] Check-in requested`);
+            } else {
+              responseMessage = RESPONSES.alreadyOnboarded(user.goals || 'your goals');
+            }
+            break;
 
-        case 'awaiting_checkin_response':
-          // User is responding to check-in
-          if (normalizedMessage === 'yes' || normalizedMessage === 'y' || normalizedMessage === 'yeah' || normalizedMessage === 'yep' || normalizedMessage === 'yea') {
-            user.lastCheckInState = 'yes';
-            user.onboardingStep = 'onboarded';
-            responseMessage = RESPONSES.checkInYes;
-            console.log(`[SMS Inbound] Check-in: YES`);
-          } else if (normalizedMessage === 'no' || normalizedMessage === 'n' || normalizedMessage === 'nope' || normalizedMessage === 'nah') {
-            user.lastCheckInState = 'no';
-            user.onboardingStep = 'onboarded';
-            responseMessage = RESPONSES.checkInNo;
-            console.log(`[SMS Inbound] Check-in: NO`);
-          } else {
-            // They didn't say yes or no, prompt again
-            responseMessage = "yo just say YES or NO 💀";
-          }
-          break;
-
-        default:
-          responseMessage = RESPONSES.unknownResponse;
+          default:
+            responseMessage = RESPONSES.unknownResponse;
+        }
       }
     }
 
