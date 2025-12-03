@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Smartphone } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import billieMascot from "@/assets/billie-mascot.png";
 
 const PHONE_NUMBER = "+15555555555";
 const SMS_BODY = "yo i needa lock in bro 😭";
@@ -33,9 +34,23 @@ export const HeroSection = () => {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-frost border border-ice/30 mb-8"
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-frost border border-ice/30 mb-6"
           >
             <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Winter 2025</span>
+          </motion.div>
+
+          {/* Mascot */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.15 }}
+            className="mb-4"
+          >
+            <img 
+              src={billieMascot} 
+              alt="BILLIE mascot" 
+              className="w-24 h-24 sm:w-28 sm:h-28 mx-auto animate-float drop-shadow-lg"
+            />
           </motion.div>
 
           {/* Main heading */}
