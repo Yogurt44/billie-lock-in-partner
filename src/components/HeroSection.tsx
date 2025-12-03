@@ -93,7 +93,7 @@ export const HeroSection = () => {
             transition={{ duration: 0.6, delay: 0.6 }}
             className="mt-12 text-sm text-muted-foreground"
           >
-            no app needed. just vibes and accountability 💅
+            no app needed. just vibes, delusion, and accountability 🔒
           </motion.p>
         </motion.div>
       </div>
