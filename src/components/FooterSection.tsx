@@ -28,10 +28,10 @@ export const FooterSection = () => {
           className="max-w-2xl mx-auto"
         >
           <h2 className="text-4xl sm:text-5xl font-bold mb-4">
-            stop scrolling. start locking in.
+            stop scrolling. text BILLIE.
           </h2>
           <p className="text-lg text-primary-foreground/70 mb-10">
-            no more "i'll start monday" bs. this is ur sign. text us rn.
+            no more "i'll start monday" bs. this is ur sign. let's lock in.
           </p>
 
           {isMobile ? (
@@ -57,7 +57,7 @@ export const FooterSection = () => {
           {/* Footer links */}
           <div className="mt-16 pt-8 border-t border-primary-foreground/10">
             <p className="text-sm text-primary-foreground/50">
-              © 2025 Lock In. built for ppl who are done making excuses.
+              © 2025 BILLIE. built for ppl who are done making excuses.
             </p>
           </div>
         </motion.div>

@@ -45,7 +45,7 @@ export const HeroSection = () => {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-6xl sm:text-7xl md:text-8xl font-bold tracking-tight text-foreground mb-6"
           >
-            Lock In
+            BILLIE
           </motion.h1>
 
           {/* Subtitle */}
@@ -55,7 +55,7 @@ export const HeroSection = () => {
             transition={{ duration: 0.6, delay: 0.3 }}
             className="text-xl sm:text-2xl text-muted-foreground font-medium mb-12 max-w-xl mx-auto"
           >
-            Your winter lock-in accountability partner — by text.
+            your accounta<span className="text-ice font-bold">BILLIE</span>ty partner — by text.
           </motion.p>
 
           {/* CTA */}
@@ -93,7 +93,7 @@ export const HeroSection = () => {
             transition={{ duration: 0.6, delay: 0.6 }}
             className="mt-12 text-sm text-muted-foreground"
           >
-            no app needed. just vibes, delusion, and accountability 🔒
+            no app needed. just vibes, delusion, and BILLIE holding u accountable 🔒
           </motion.p>
         </motion.div>
       </div>

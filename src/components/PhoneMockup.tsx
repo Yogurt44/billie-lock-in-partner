@@ -47,7 +47,7 @@ export const PhoneMockup = () => {
             <div className="bg-background rounded-[2.5rem] overflow-hidden">
               {/* Status bar */}
               <div className="h-12 bg-card flex items-center justify-center">
-                <span className="text-sm font-medium text-foreground">Lock In 🔒</span>
+                <span className="text-sm font-medium text-foreground">BILLIE 🔒</span>
               </div>
 
               {/* Messages */}
