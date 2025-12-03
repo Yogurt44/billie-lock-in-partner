@@ -5,14 +5,14 @@ const steps = [
   {
     icon: MessageCircle,
     number: "01",
-    title: "Text us",
-    description: "Send a message to start. Lock In will roast u + ask ur name.",
+    title: "Text BILLIE",
+    description: "Send a message to start. BILLIE will roast u + ask ur name.",
     emoji: "📱",
   },
   {
     icon: Target,
     number: "02",
-    title: "Tell us your goals",
+    title: "Tell BILLIE ur goals",
     description: "Drop your goals for the next 3 months — list as many as u want. Be delusional but realistic.",
     emoji: "🎯",
   },
@@ -20,7 +20,7 @@ const steps = [
     icon: CheckCircle2,
     number: "03",
     title: "Check in daily",
-    description: "Text 'check in' and we'll hold u accountable. No corporate energy. Just vibes & results.",
+    description: "Text 'check in' and BILLIE will hold u accountable. No corporate energy. Just vibes & results.",
     emoji: "✅",
   },
 ];

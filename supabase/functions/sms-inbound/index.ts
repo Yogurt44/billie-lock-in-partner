@@ -25,12 +25,12 @@ async function generateAIResponse(prompt: string, context: string): Promise<stri
 
 // Gen Z blunt funny responses
 const RESPONSES = {
-  welcome: "aight unc, what should I call u 😭",
-  afterName: (name: string) => `bet. now drop your goals for the next 3 months. list as many as u want. be delulu but realistic.`,
-  afterGoals: (goals: string) => `say less. ur winter lock-in goals are: ${goals} 🔒\ntext 'check in' whenever u want accountability.`,
-  checkInPrompt: "did u get closer to ANY of your goals today???\nYES or NO — don't lie.",
-  checkInYes: "ok slay 🔥 ur actually locked in.",
-  checkInNo: "bro be fr 😭 it's fine, we lock in tomorrow.",
+  welcome: "yo it's BILLIE 😭 what should I call u?",
+  afterName: (name: string) => `bet ${name}. now drop your goals for the next 3 months. list as many as u want. be delulu but realistic.`,
+  afterGoals: (goals: string) => `say less. ur winter lock-in goals are: ${goals} 🔒\ntext 'check in' whenever u want accountability. BILLIE's got u.`,
+  checkInPrompt: "did u get closer to ANY of your goals today???\nYES or NO — don't lie to BILLIE.",
+  checkInYes: "ok slay 🔥 ur actually locked in. BILLIE's proud.",
+  checkInNo: "bro be fr 😭 it's fine, we lock in tomorrow. BILLIE believes in u.",
   alreadyOnboarded: (goals: string) => `ur winter lock-in goals are: ${goals} 🔒\ntext 'check in' whenever u want accountability.`,
   unknownResponse: "yo just text 'check in' when ur ready to lock in 🔒",
 };
