@@ -6,55 +6,58 @@
 
 @layer base {
   :root {
-    /* Winter palette - icy, crisp, clean */
-    --background: 210 20% 98%;
-    --foreground: 220 25% 10%;
+    /* Icy winter palette - cold, crisp, glacial */
+    --background: 200 30% 98%;
+    --foreground: 210 50% 8%;
 
-    --card: 210 25% 97%;
-    --card-foreground: 220 25% 10%;
+    --card: 200 40% 97%;
+    --card-foreground: 210 50% 8%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 25% 10%;
+    --popover: 200 30% 100%;
+    --popover-foreground: 210 50% 8%;
 
-    /* Deep navy primary */
-    --primary: 220 25% 10%;
-    --primary-foreground: 210 20% 98%;
+    /* Deep arctic navy primary */
+    --primary: 210 60% 12%;
+    --primary-foreground: 200 30% 98%;
 
-    /* Frosty blue secondary */
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 220 25% 10%;
+    /* Glacial blue secondary */
+    --secondary: 195 50% 95%;
+    --secondary-foreground: 210 50% 8%;
 
-    /* Ice blue accent */
-    --accent: 205 80% 60%;
-    --accent-foreground: 0 0% 100%;
+    /* Bright ice cyan accent */
+    --accent: 190 90% 55%;
+    --accent-foreground: 210 50% 8%;
 
-    --muted: 210 20% 94%;
-    --muted-foreground: 220 15% 45%;
+    --muted: 200 25% 93%;
+    --muted-foreground: 210 20% 40%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 210 20% 90%;
-    --input: 210 20% 90%;
-    --ring: 205 80% 60%;
+    --border: 195 30% 88%;
+    --input: 195 30% 88%;
+    --ring: 190 90% 55%;
 
     --radius: 1rem;
 
-    /* Custom winter tokens */
-    --frost: 205 70% 95%;
-    --ice: 205 80% 60%;
-    --snow: 210 25% 99%;
-    --midnight: 220 25% 8%;
+    /* Custom icy winter tokens */
+    --frost: 195 60% 94%;
+    --ice: 190 90% 55%;
+    --snow: 200 40% 99%;
+    --midnight: 210 60% 6%;
+    --glacier: 195 80% 70%;
+    --arctic: 200 50% 85%;
     
     /* Gradients */
-    --gradient-frost: linear-gradient(135deg, hsl(210 25% 99%) 0%, hsl(205 70% 95%) 100%);
-    --gradient-ice: linear-gradient(180deg, hsl(205 80% 60% / 0.1) 0%, hsl(205 80% 60% / 0) 100%);
-    --gradient-hero: linear-gradient(180deg, hsl(210 20% 98%) 0%, hsl(205 70% 95%) 100%);
+    --gradient-frost: linear-gradient(135deg, hsl(200 40% 99%) 0%, hsl(195 60% 94%) 100%);
+    --gradient-ice: linear-gradient(180deg, hsl(190 90% 55% / 0.15) 0%, hsl(195 80% 70% / 0.05) 100%);
+    --gradient-hero: linear-gradient(180deg, hsl(200 30% 98%) 0%, hsl(195 60% 94%) 50%, hsl(195 50% 92%) 100%);
     
     /* Shadows */
-    --shadow-soft: 0 4px 20px -4px hsl(220 25% 10% / 0.08);
-    --shadow-glow: 0 0 60px hsl(205 80% 60% / 0.15);
-    --shadow-card: 0 8px 32px -8px hsl(220 25% 10% / 0.1);
+    --shadow-soft: 0 4px 20px -4px hsl(210 50% 8% / 0.08);
+    --shadow-glow: 0 0 80px hsl(190 90% 55% / 0.25);
+    --shadow-card: 0 8px 32px -8px hsl(210 50% 8% / 0.1);
+    --shadow-ice: 0 0 40px hsl(190 90% 55% / 0.15);
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -67,46 +70,49 @@
   }
 
   .dark {
-    --background: 220 25% 6%;
-    --foreground: 210 20% 98%;
+    --background: 210 50% 5%;
+    --foreground: 200 30% 98%;
 
-    --card: 220 25% 8%;
-    --card-foreground: 210 20% 98%;
+    --card: 210 50% 7%;
+    --card-foreground: 200 30% 98%;
 
-    --popover: 220 25% 8%;
-    --popover-foreground: 210 20% 98%;
+    --popover: 210 50% 7%;
+    --popover-foreground: 200 30% 98%;
 
-    --primary: 210 20% 98%;
-    --primary-foreground: 220 25% 10%;
+    --primary: 200 30% 98%;
+    --primary-foreground: 210 50% 8%;
 
-    --secondary: 220 20% 15%;
-    --secondary-foreground: 210 20% 98%;
+    --secondary: 210 40% 12%;
+    --secondary-foreground: 200 30% 98%;
 
-    --accent: 205 80% 60%;
-    --accent-foreground: 220 25% 10%;
+    --accent: 190 90% 50%;
+    --accent-foreground: 210 50% 8%;
 
-    --muted: 220 20% 15%;
-    --muted-foreground: 210 15% 60%;
+    --muted: 210 40% 12%;
+    --muted-foreground: 200 20% 55%;
 
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive-foreground: 200 30% 98%;
 
-    --border: 220 20% 15%;
-    --input: 220 20% 15%;
-    --ring: 205 80% 60%;
+    --border: 210 40% 12%;
+    --input: 210 40% 12%;
+    --ring: 190 90% 50%;
 
-    --frost: 220 25% 12%;
-    --ice: 205 80% 50%;
-    --snow: 220 25% 10%;
-    --midnight: 220 25% 4%;
+    --frost: 210 50% 10%;
+    --ice: 190 90% 45%;
+    --snow: 210 50% 8%;
+    --midnight: 210 60% 3%;
+    --glacier: 195 80% 60%;
+    --arctic: 200 40% 20%;
 
-    --gradient-frost: linear-gradient(135deg, hsl(220 25% 10%) 0%, hsl(220 25% 12%) 100%);
-    --gradient-ice: linear-gradient(180deg, hsl(205 80% 50% / 0.1) 0%, hsl(205 80% 50% / 0) 100%);
-    --gradient-hero: linear-gradient(180deg, hsl(220 25% 6%) 0%, hsl(220 25% 10%) 100%);
+    --gradient-frost: linear-gradient(135deg, hsl(210 50% 8%) 0%, hsl(210 50% 10%) 100%);
+    --gradient-ice: linear-gradient(180deg, hsl(190 90% 45% / 0.15) 0%, hsl(190 90% 45% / 0) 100%);
+    --gradient-hero: linear-gradient(180deg, hsl(210 50% 5%) 0%, hsl(210 50% 8%) 100%);
 
     --shadow-soft: 0 4px 20px -4px hsl(0 0% 0% / 0.3);
-    --shadow-glow: 0 0 60px hsl(205 80% 50% / 0.2);
+    --shadow-glow: 0 0 80px hsl(190 90% 45% / 0.3);
     --shadow-card: 0 8px 32px -8px hsl(0 0% 0% / 0.4);
+    --shadow-ice: 0 0 40px hsl(190 90% 45% / 0.2);
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;

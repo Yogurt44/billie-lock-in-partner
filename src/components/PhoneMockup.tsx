@@ -11,7 +11,10 @@ const messages = [
 
 export const PhoneMockup = () => {
   return (
-    <section className="py-24 sm:py-32 frost-bg">
+  <section className="py-24 sm:py-32 frost-bg relative overflow-hidden">
+      {/* Icy orbs */}
+      <div className="absolute top-20 left-10 w-48 h-48 bg-ice/15 rounded-full blur-3xl" />
+      <div className="absolute bottom-20 right-10 w-64 h-64 bg-ice/10 rounded-full blur-3xl" />
       <div className="container px-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -21,10 +24,10 @@ export const PhoneMockup = () => {
           className="text-center mb-16"
         >
           <h2 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
-            Real convo energy
+            real convo fr fr
           </h2>
           <p className="text-lg text-muted-foreground max-w-md mx-auto">
-            No corporate BS. Just straight talk.
+            no cap. no corporate energy. just us being real w u.
           </p>
         </motion.div>
 

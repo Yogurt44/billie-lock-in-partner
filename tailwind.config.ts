@@ -50,11 +50,13 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Winter theme colors
+        // Icy winter theme colors
         frost: "hsl(var(--frost))",
         ice: "hsl(var(--ice))",
         snow: "hsl(var(--snow))",
         midnight: "hsl(var(--midnight))",
+        glacier: "hsl(var(--glacier))",
+        arctic: "hsl(var(--arctic))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
