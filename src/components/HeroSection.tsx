@@ -13,11 +13,12 @@ export const HeroSection = () => {
 
   return (
     <section className="relative min-h-screen flex items-center justify-center hero-gradient overflow-hidden">
-      {/* Subtle background elements */}
+      {/* Icy background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-ice/10 rounded-full blur-3xl animate-pulse-soft" />
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-ice/5 rounded-full blur-3xl animate-pulse-soft" style={{ animationDelay: '1.5s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-frost rounded-full blur-3xl opacity-50" />
+        <div className="absolute top-20 left-10 w-72 h-72 bg-ice/20 rounded-full blur-3xl animate-pulse-soft" />
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-ice/15 rounded-full blur-3xl animate-pulse-soft" style={{ animationDelay: '1.5s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-frost rounded-full blur-3xl opacity-60" />
+        <div className="absolute top-40 right-1/4 w-48 h-48 bg-ice/25 rounded-full blur-2xl animate-float" />
       </div>
 
       <div className="container relative z-10 px-6 py-20 text-center">
@@ -32,10 +33,10 @@ export const HeroSection = () => {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-frost border border-border/50 mb-8"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-frost border border-ice/30 mb-8"
           >
-            <span className="text-2xl">🔒</span>
-            <span className="text-sm font-medium text-muted-foreground">Winter 2024</span>
+            <span className="text-2xl">🥶</span>
+            <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Winter 2025</span>
           </motion.div>
 
           {/* Main heading */}

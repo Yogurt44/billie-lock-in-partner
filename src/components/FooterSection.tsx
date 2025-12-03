@@ -12,10 +12,11 @@ export const FooterSection = () => {
 
   return (
     <footer className="py-24 sm:py-32 bg-midnight text-primary-foreground relative overflow-hidden">
-      {/* Background elements */}
+      {/* Icy background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-10 right-10 w-64 h-64 bg-ice/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-10 left-10 w-48 h-48 bg-ice/5 rounded-full blur-3xl" />
+        <div className="absolute top-10 right-10 w-64 h-64 bg-ice/15 rounded-full blur-3xl animate-pulse-soft" />
+        <div className="absolute bottom-10 left-10 w-48 h-48 bg-ice/10 rounded-full blur-3xl animate-pulse-soft" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-ice/5 rounded-full blur-3xl" />
       </div>
 
       <div className="container relative z-10 px-6 text-center">
@@ -27,10 +28,10 @@ export const FooterSection = () => {
           className="max-w-2xl mx-auto"
         >
           <h2 className="text-4xl sm:text-5xl font-bold mb-4">
-            Time to lock in fr
+            stop scrolling. start locking in.
           </h2>
           <p className="text-lg text-primary-foreground/70 mb-10">
-            No more excuses. No more "I'll start Monday." This is your sign.
+            no more "i'll start monday" bs. this is ur sign. text us rn.
           </p>
 
           {isMobile ? (
@@ -56,7 +57,7 @@ export const FooterSection = () => {
           {/* Footer links */}
           <div className="mt-16 pt-8 border-t border-primary-foreground/10">
             <p className="text-sm text-primary-foreground/50">
-              © 2024 Lock In. Built for people who actually want to change.
+              © 2025 Lock In. built for ppl who are done making excuses 🥶
             </p>
           </div>
         </motion.div>

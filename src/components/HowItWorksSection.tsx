@@ -49,9 +49,11 @@ const itemVariants = {
 
 export const HowItWorksSection = () => {
   return (
-    <section className="py-24 sm:py-32 bg-background relative">
-      {/* Subtle gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-frost/50 to-transparent pointer-events-none" />
+  <section className="py-24 sm:py-32 bg-background relative overflow-hidden">
+      {/* Icy gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-b from-frost/60 via-ice/5 to-transparent pointer-events-none" />
+      <div className="absolute top-0 right-0 w-96 h-96 bg-ice/10 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 left-0 w-64 h-64 bg-ice/10 rounded-full blur-3xl" />
       
       <div className="container relative z-10 px-6">
         <motion.div
@@ -62,10 +64,10 @@ export const HowItWorksSection = () => {
           className="text-center mb-16"
         >
           <h2 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
-            How it works
+            how it works
           </h2>
           <p className="text-lg text-muted-foreground max-w-md mx-auto">
-            Three steps to becoming that person who actually follows through.
+            3 steps. no fluff. just accountability.
           </p>
         </motion.div>
 
