@@ -33,9 +33,8 @@ export const HeroSection = () => {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-frost border border-ice/30 mb-8"
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-frost border border-ice/30 mb-8"
           >
-            <span className="text-2xl">🥶</span>
             <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Winter 2025</span>
           </motion.div>
 
