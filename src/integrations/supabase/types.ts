@@ -14,6 +14,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      billie_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billie_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "billie_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       billie_users: {
         Row: {
           awaiting_check_in: boolean

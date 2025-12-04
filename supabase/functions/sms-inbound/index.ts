@@ -20,7 +20,7 @@ const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who
 ## CORE IDENTITY:
 - You're like that one brutally honest friend everyone needs
 - You genuinely care about them succeeding but you're not gonna sugarcoat anything
-- You remember EVERYTHING they tell you and throw it back at them later
+- You remember EVERYTHING they tell you and throw it back at them later (you have their FULL conversation history)
 - You're playful - you roast them but it comes from love
 - You adapt your language based on who you're talking to (unc vs queen, him vs her)
 
@@ -97,10 +97,11 @@ const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who
 - "that sounds like a roblox username"
 - "wait also how old are you (not being sus i promise)"
 
-### Callback Humor (USE THEIR OWN DETAILS):
-- Reference specific things they mentioned earlier
+### Callback Humor (USE THEIR OWN DETAILS FROM HISTORY):
+- Reference specific things they mentioned in PREVIOUS conversations
 - "WAIT you're just casually going to princeton library to work?? that's actually fire"
 - "that's literally cheaper than a couple coffees you quit anyway lmao"
+- If they mentioned specific goals, struggles, names, places - USE THEM
 
 ## CONVERSATION APPROACH:
 
@@ -109,7 +110,6 @@ const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who
 - "what's actually stopping you from getting deep work sessions in right now?"
 - "what are you NOT doing right now that you wish you were?"
 - "are you holding onto things because you 'should' do them or because they actually move the needle for you?"
-- "what do you think? are you holding onto things because you 'should' do them or because they actually move the needle?"
 
 ### Life Beyond Productivity:
 - Ask about friendships, loneliness, what's missing
@@ -121,9 +121,11 @@ const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who
 - "ok perfect, so here's what i set up for you:"
 - "here's what i'm thinking for your daily flow:"
 
-### Adapting:
-- If they have ADHD: "journaling can be helpful but with adhd it's easy to let it turn into another 2 hour rabbit hole lol"
-- Match their energy - if they're excited, get hype. if they're struggling, be real but supportive
+### CRITICAL - Using Conversation History:
+- You have access to the FULL conversation history
+- Reference specific things they said days/weeks ago
+- Call back to their goals, struggles, wins, specific details
+- Show you remember them as a person, not just a user
 
 ## ONBOARDING FLOW APPROACH:
 Don't rush through onboarding. Have a real conversation:
@@ -136,7 +138,7 @@ Don't rush through onboarding. Have a real conversation:
 7. Understand what's actually stopping them
 8. Create a personalized approach based on everything you learned
 
-Remember: You're BILLIE. Keep it real, keep it short, keep it helpful. Be the friend they need, not the coach they expect.`;
+Remember: You're BILLIE. Keep it real, keep it short, keep it helpful. Be the friend they need, not the coach they expect. USE THE CONVERSATION HISTORY.`;
 
 // Validate Twilio webhook signature
 function validateTwilioSignature(
@@ -179,8 +181,39 @@ function parseBodyToParams(body: string): Record<string, string> {
   return params;
 }
 
-// Build conversation history for context
-function buildConversationContext(user: any, conversationHistory: string[]): string {
+// Get full conversation history for a user
+async function getConversationHistory(userId: string): Promise<Array<{role: string, content: string, created_at: string}>> {
+  const { data, error } = await supabase
+    .from('billie_messages')
+    .select('role, content, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
+    .limit(100); // Last 100 messages for context
+
+  if (error) {
+    console.error('[DB] Error fetching conversation history:', error);
+    return [];
+  }
+
+  console.log(`[DB] Retrieved ${data?.length || 0} messages from history`);
+  return data || [];
+}
+
+// Save a message to conversation history
+async function saveMessage(userId: string, role: 'user' | 'billie', content: string) {
+  const { error } = await supabase
+    .from('billie_messages')
+    .insert({ user_id: userId, role, content });
+
+  if (error) {
+    console.error('[DB] Error saving message:', error);
+  } else {
+    console.log(`[DB] Saved ${role} message`);
+  }
+}
+
+// Build conversation context from history
+function buildConversationContext(user: any, history: Array<{role: string, content: string, created_at: string}>): string {
   let context = "## USER PROFILE:\n";
   
   if (user.name) {
@@ -188,28 +221,50 @@ function buildConversationContext(user: any, conversationHistory: string[]): str
   }
   
   if (user.goals) {
-    context += `- Goals they shared: ${user.goals}\n`;
-    context += `- IMPORTANT: Reference these goals, use their exact words back at them\n`;
+    context += `- Their stated goals: ${user.goals}\n`;
   }
   
   context += `- Onboarding stage: ${user.onboarding_step}\n`;
+  context += `- First contact: ${user.created_at}\n`;
   
-  if (conversationHistory.length > 0) {
-    context += `\n## RECENT CONVERSATION:\n`;
-    context += conversationHistory.join('\n');
-    context += `\n\nIMPORTANT: Reference specific details they mentioned. Use callback humor.`;
+  if (history.length > 0) {
+    context += `\n## FULL CONVERSATION HISTORY (${history.length} messages):\n`;
+    context += `IMPORTANT: This is everything they've ever said to you. Reference specific details, use callback humor, show you remember them.\n\n`;
+    
+    for (const msg of history) {
+      const timestamp = new Date(msg.created_at).toLocaleString();
+      if (msg.role === 'user') {
+        context += `[${timestamp}] THEM: ${msg.content}\n`;
+      } else {
+        context += `[${timestamp}] YOU (BILLIE): ${msg.content}\n`;
+      }
+    }
+    
+    context += `\n---END OF HISTORY---\n`;
+    context += `\nNow respond to their latest message. Use specific details from the history above.`;
   }
 
   return context;
 }
 
 // Generate dynamic onboarding context based on step
-function getOnboardingContext(user: any, userMessage: string): string {
+function getOnboardingContext(user: any, userMessage: string, historyLength: number): string {
   const step = user.onboarding_step;
   const name = user.name;
   const goals = user.goals;
   
-  if (step === 0 && !name) {
+  // If we have conversation history, we're not truly new
+  if (historyLength > 0 && step >= 5) {
+    return `## TASK: This is an ongoing conversation with someone you know well.
+
+Be their accountability partner. Reference things from your conversation history.
+If they say "check in" - ask how they did on their goals.
+Otherwise have a real conversation. Help them. Challenge them. Use callback humor from past convos.
+
+Their goals: ${goals || 'ask about their goals'}`;
+  }
+  
+  if (step === 0 && !name && historyLength === 0) {
     return `## TASK: This is a NEW USER texting for the first time.
 
 Give them a playful welcome. Be curious about them. Example vibe:
@@ -218,10 +273,6 @@ Give them a playful welcome. Be curious about them. Example vibe:
 "i'll tell you what i'm about in a sec but first, what's your name? you seem like a [make a random guess]"
 
 Make a playful guess at their name. Be casual and intriguing.`;
-  }
-  
-  if (step === 0 && !name) {
-    return `## TASK: They just sent their first message. Welcome them and ask for their name playfully.`;
   }
   
   if (step === 1 && name && !goals) {
@@ -238,7 +289,7 @@ Don't ask for goals yet - get to know them first.`;
   }
   
   if (step === 2) {
-    return `## TASK: You know their name (${name}) and age. Now ask what's going on - what brought them to you?
+    return `## TASK: You know their name (${name}) and maybe their age. Now ask what's going on - what brought them to you?
 
 Example vibe:
 "ok unc, if ur texting me it prob means you have some big aspirations but aren't quite there yet !!"
@@ -251,7 +302,7 @@ Be curious about their situation. Ask open-ended questions.`;
   if (step === 3 && goals) {
     return `## TASK: They shared their goals: "${goals}"
 
-This is a LOT usually. Don't just accept it - push back thoughtfully:
+This is usually a LOT. Don't just accept it - push back thoughtfully:
 "ok ok i see you, that's a solid list"
 "but real talk, this is a LOT to tackle at once and you're prob gonna burn out if you try to do everything perfectly from day 1"
 "what's the ONE thing on this list that would have the biggest impact on everything else if you nailed it?"
@@ -267,7 +318,7 @@ Ask about:
 - What's going on in their life beyond productivity
 - Dig into their specific situation
 
-Reference things they already told you. Be BILLIE - caring but real.`;
+Reference things they already told you from the conversation history. Be BILLIE - caring but real.`;
   }
   
   if (step >= 5) {
@@ -276,18 +327,18 @@ Reference things they already told you. Be BILLIE - caring but real.`;
 If they say "check in" - ask how they did on their goals
 Otherwise - have a real conversation. Help them. Challenge them. Hype them up.
 
-Always reference their specific goals and details they've shared.
+CRITICAL: Reference their specific goals and details from conversation history.
 Goals: ${goals || 'not set yet'}`;
   }
   
-  return `## TASK: Have a natural conversation. Be BILLIE.`;
+  return `## TASK: Have a natural conversation. Be BILLIE. Use the conversation history.`;
 }
 
 // Generate AI response using Lovable AI
 async function generateBillieResponse(
   userMessage: string, 
   user: any,
-  conversationHistory: string[]
+  history: Array<{role: string, content: string, created_at: string}>
 ): Promise<string> {
   if (!lovableApiKey) {
     console.error('[AI] LOVABLE_API_KEY not configured');
@@ -295,8 +346,27 @@ async function generateBillieResponse(
   }
 
   try {
-    const userContext = buildConversationContext(user, conversationHistory);
-    const taskContext = getOnboardingContext(user, userMessage);
+    const userContext = buildConversationContext(user, history);
+    const taskContext = getOnboardingContext(user, userMessage, history.length);
+    
+    // Build messages array with history for the AI
+    const messages: Array<{role: string, content: string}> = [
+      { role: "system", content: BILLIE_SYSTEM_PROMPT },
+      { role: "system", content: userContext },
+      { role: "system", content: taskContext },
+    ];
+    
+    // Add recent conversation as actual message history (last 20 messages)
+    const recentHistory = history.slice(-20);
+    for (const msg of recentHistory) {
+      messages.push({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      });
+    }
+    
+    // Add the current message
+    messages.push({ role: "user", content: userMessage });
     
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -306,12 +376,7 @@ async function generateBillieResponse(
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: BILLIE_SYSTEM_PROMPT },
-          { role: "system", content: userContext },
-          { role: "system", content: taskContext },
-          { role: "user", content: userMessage }
-        ],
+        messages,
         max_tokens: 400,
       }),
     });
@@ -468,50 +533,42 @@ serve(async (req) => {
     const user = await getOrCreateUser(from);
     const normalizedMessage = message.toLowerCase().trim();
     
-    // Build simple conversation history (we'll expand this later)
-    const conversationHistory: string[] = [];
-    if (user.name) conversationHistory.push(`User's name: ${user.name}`);
-    if (user.goals) conversationHistory.push(`User's goals: ${user.goals}`);
+    // Get full conversation history
+    const conversationHistory = await getConversationHistory(user.id);
+    console.log(`[SMS] User has ${conversationHistory.length} messages in history`);
+
+    // Save the incoming user message
+    await saveMessage(user.id, 'user', message);
 
     // Determine state transitions based on onboarding step
-    let shouldAdvanceStep = false;
     let updates: Record<string, any> = {};
 
     if (user.onboarding_step === 0 && !user.name) {
-      // First message from brand new user - after response, they'll give name
-      // Don't advance yet, just welcome them
-      console.log('[SMS] New user - sending welcome');
-    } else if (user.onboarding_step === 0 && user.name) {
-      // This shouldn't happen, but handle it
-      updates.onboarding_step = 1;
-      shouldAdvanceStep = true;
-    } else if (user.onboarding_step === 0) {
-      // They're responding with their name
-      updates.name = message.trim();
-      updates.onboarding_step = 1;
-      shouldAdvanceStep = true;
-      console.log('[SMS] Got name, advancing to step 1');
+      // First message - this IS their name if we already welcomed them
+      // Check if we have any history (meaning we already sent welcome)
+      if (conversationHistory.length > 0) {
+        updates.name = message.trim();
+        updates.onboarding_step = 1;
+        console.log('[SMS] Got name, advancing to step 1');
+      }
+      // If no history, this is truly first contact - don't advance yet
     } else if (user.onboarding_step === 1) {
       // They're responding with age/context - advance to goals question
       updates.onboarding_step = 2;
-      shouldAdvanceStep = true;
-      console.log('[SMS] Got age, advancing to step 2');
+      console.log('[SMS] Got age/context, advancing to step 2');
     } else if (user.onboarding_step === 2) {
       // They're sharing their goals
       updates.goals = message.trim();
       updates.onboarding_step = 3;
-      shouldAdvanceStep = true;
       console.log('[SMS] Got goals, advancing to step 3');
     } else if (user.onboarding_step === 3) {
       // Continuing the goal conversation - dig deeper
       updates.onboarding_step = 4;
-      shouldAdvanceStep = true;
       console.log('[SMS] Deeper convo, advancing to step 4');
     } else if (user.onboarding_step === 4) {
       // Moving to fully onboarded
       updates.onboarding_step = 5;
-      shouldAdvanceStep = true;
-      console.log('[SMS] Fully onboarding, advancing to step 5');
+      console.log('[SMS] Fully onboarded, advancing to step 5');
     }
 
     // Handle check-in flow for onboarded users
@@ -530,9 +587,12 @@ serve(async (req) => {
       await updateUser(from, updates);
     }
 
-    // Generate response with updated user state
+    // Generate response with updated user state and full history
     const updatedUser = { ...user, ...updates };
     const responseMessage = await generateBillieResponse(message, updatedUser, conversationHistory);
+
+    // Save BILLIE's response to history
+    await saveMessage(user.id, 'billie', responseMessage);
 
     console.log(`[SMS] Sending response`);
 
