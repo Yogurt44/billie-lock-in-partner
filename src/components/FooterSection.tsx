@@ -1,13 +1,11 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Smartphone } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { MessageSquare } from "lucide-react";
 
-const PHONE_NUMBER = "+15555555555";
+const PHONE_NUMBER = "+18444890104";
 const SMS_BODY = "yo i needa lock in bro 😭";
 
 export const FooterSection = () => {
-  const isMobile = useIsMobile();
   const smsLink = `sms:${PHONE_NUMBER}&body=${encodeURIComponent(SMS_BODY)}`;
 
   return (
@@ -27,36 +25,23 @@ export const FooterSection = () => {
           transition={{ duration: 0.6 }}
           className="max-w-2xl mx-auto"
         >
-          <h2 className="text-4xl sm:text-5xl font-bold mb-4">
+          <h2 className="text-4xl sm:text-5xl font-bold mb-4 text-white">
             stop scrolling. text BILLIE.
           </h2>
-          <p className="text-lg text-primary-foreground/70 mb-10">
+          <p className="text-lg text-white/80 mb-10">
             no more "i'll start monday" bs. this is ur sign. let's lock in.
           </p>
 
-          {isMobile ? (
-            <Button asChild variant="ice" size="xl" className="group">
-              <a href={smsLink}>
-                <MessageSquare className="mr-2 transition-transform group-hover:scale-110" />
-                Start Locking In
-              </a>
-            </Button>
-          ) : (
-            <div className="inline-flex flex-col items-center gap-4">
-              <Button variant="ice" size="xl" className="cursor-default">
-                <Smartphone className="mr-2" />
-                Text to Start
-              </Button>
-              <div className="px-6 py-3 rounded-xl bg-primary-foreground/10 backdrop-blur-sm border border-primary-foreground/20">
-                <p className="text-sm text-primary-foreground/70 mb-1">Send a text to</p>
-                <p className="text-xl font-bold tracking-wide">{PHONE_NUMBER}</p>
-              </div>
-            </div>
-          )}
+          <Button asChild variant="ice" size="xl" className="group">
+            <a href={smsLink}>
+              <MessageSquare className="mr-2 transition-transform group-hover:scale-110" />
+              Start Locking In
+            </a>
+          </Button>
 
           {/* Footer links */}
           <div className="mt-16 pt-8 border-t border-primary-foreground/10">
-            <p className="text-sm text-primary-foreground/50">
+            <p className="text-sm text-white/60">
               © 2025 BILLIE. built for ppl who are done making excuses.
             </p>
           </div>
