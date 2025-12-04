@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,53 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// Twilio Auth Token for signature validation
+const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+
+// Validate Twilio webhook signature
+function validateTwilioSignature(
+  signature: string | null,
+  url: string,
+  params: Record<string, string>
+): boolean {
+  if (!twilioAuthToken) {
+    console.error('[Security] TWILIO_AUTH_TOKEN not configured');
+    return false;
+  }
+  if (!signature) {
+    console.error('[Security] Missing X-Twilio-Signature header');
+    return false;
+  }
+
+  // Build the data string: URL + sorted params concatenated
+  const sortedKeys = Object.keys(params).sort();
+  let data = url;
+  for (const key of sortedKeys) {
+    data += key + params[key];
+  }
+
+  // Create HMAC-SHA1 signature
+  const hmac = createHmac("sha1", twilioAuthToken);
+  hmac.update(data);
+  const expectedSignature = hmac.digest("base64");
+
+  const isValid = signature === expectedSignature;
+  if (!isValid) {
+    console.warn('[Security] Invalid Twilio signature');
+  }
+  return isValid;
+}
+
+// Parse body into params object for signature validation
+function parseBodyToParams(body: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  const urlParams = new URLSearchParams(body);
+  for (const [key, value] of urlParams.entries()) {
+    params[key] = value;
+  }
+  return params;
+}
 
 // Stub for OpenAI - you can wire this up later
 async function generateAIResponse(prompt: string, context: string): Promise<string | null> {
@@ -59,12 +107,12 @@ async function getOrCreateUser(phone: string) {
   }
 
   if (existingUser) {
-    console.log(`[DB] Found existing user: ${phone}`);
+    console.log(`[DB] Found existing user`);
     return existingUser;
   }
 
   // Create new user
-  console.log(`[DB] Creating new user: ${phone}`);
+  console.log(`[DB] Creating new user`);
   const { data: newUser, error: insertError } = await supabase
     .from('billie_users')
     .insert({ phone })
@@ -90,7 +138,7 @@ async function updateUser(phone: string, updates: Record<string, any>) {
     console.error('[DB] Error updating user:', error);
     throw error;
   }
-  console.log(`[DB] Updated user ${phone}:`, updates);
+  console.log(`[DB] User updated`);
 }
 
 serve(async (req) => {
@@ -100,10 +148,24 @@ serve(async (req) => {
 
   try {
     const body = await req.text();
-    console.log(`[SMS Inbound] Raw body: ${body}`);
+    
+    // Validate Twilio signature before processing
+    const twilioSignature = req.headers.get('X-Twilio-Signature');
+    const webhookUrl = `${supabaseUrl}/functions/v1/sms-inbound`;
+    const params = parseBodyToParams(body);
+    
+    if (!validateTwilioSignature(twilioSignature, webhookUrl, params)) {
+      console.error('[Security] Rejected request with invalid signature');
+      return new Response('Unauthorized', { 
+        status: 403,
+        headers: corsHeaders 
+      });
+    }
+    
+    console.log('[Security] Valid Twilio signature verified');
 
     const { from, message } = parseIncomingSMS(body);
-    console.log(`[SMS Inbound] From: ${from}, Message: "${message}"`);
+    console.log(`[SMS Inbound] Message received`);
 
     if (!from) {
       console.error('[SMS Inbound] No phone number in request');
@@ -115,7 +177,7 @@ serve(async (req) => {
 
     // Get or create user from database
     const user = await getOrCreateUser(from);
-    console.log(`[SMS Inbound] User state:`, user);
+    console.log(`[SMS Inbound] User onboarding step: ${user.onboarding_step}`);
 
     // Determine if this is a brand new user (no name yet, step 0)
     const isNewUser = user.onboarding_step === 0 && !user.name;
@@ -143,14 +205,14 @@ serve(async (req) => {
           // User is providing their name
           await updateUser(from, { name: message.trim(), onboarding_step: 1 });
           responseMessage = RESPONSES.afterName(message.trim());
-          console.log(`[SMS Inbound] Name set: ${message.trim()}`);
+          console.log(`[SMS Inbound] Name set`);
           break;
 
         case 1:
           // User is providing their goals
           await updateUser(from, { goals: message.trim(), onboarding_step: 2 });
           responseMessage = RESPONSES.afterGoals(message.trim());
-          console.log(`[SMS Inbound] Goals set: ${message.trim()}`);
+          console.log(`[SMS Inbound] Goals set`);
           break;
 
         case 2:
@@ -173,7 +235,7 @@ serve(async (req) => {
     const aiResponse = await generateAIResponse(responseMessage, message);
     const finalResponse = aiResponse || responseMessage;
 
-    console.log(`[SMS Inbound] Response: "${finalResponse}"`);
+    console.log(`[SMS Inbound] Response sent`);
 
     return new Response(createTwiMLResponse(finalResponse), {
       headers: {
