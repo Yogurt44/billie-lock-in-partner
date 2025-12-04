@@ -14,7 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      billie_users: {
+        Row: {
+          awaiting_check_in: boolean
+          created_at: string
+          goals: string | null
+          id: string
+          name: string | null
+          onboarding_step: number
+          phone: string
+          updated_at: string
+        }
+        Insert: {
+          awaiting_check_in?: boolean
+          created_at?: string
+          goals?: string | null
+          id?: string
+          name?: string | null
+          onboarding_step?: number
+          phone: string
+          updated_at?: string
+        }
+        Update: {
+          awaiting_check_in?: boolean
+          created_at?: string
+          goals?: string | null
+          id?: string
+          name?: string | null
+          onboarding_step?: number
+          phone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
