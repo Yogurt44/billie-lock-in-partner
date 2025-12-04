@@ -503,6 +503,38 @@ async function updateUser(phone: string, updates: Record<string, any>) {
   console.log(`[DB] User updated:`, Object.keys(updates));
 }
 
+// Generate payment link for a user
+async function getPaymentLink(userId: string, phone: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/create-checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({ user_id: userId, phone, plan: 'monthly' }),
+    });
+
+    if (!response.ok) {
+      console.error('[Payment] Failed to create checkout session');
+      return null;
+    }
+
+    const data = await response.json();
+    return data.url;
+  } catch (error) {
+    console.error('[Payment] Error creating checkout:', error);
+    return null;
+  }
+}
+
+// Check if user has active subscription
+function isUserSubscribed(user: any): boolean {
+  if (user.subscription_status !== 'active') return false;
+  if (!user.subscription_end) return false;
+  return new Date(user.subscription_end) > new Date();
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -542,6 +574,7 @@ serve(async (req) => {
 
     // Determine state transitions based on onboarding step
     let updates: Record<string, any> = {};
+    let justCompletedOnboarding = false;
 
     if (user.onboarding_step === 0 && !user.name) {
       // First message - this IS their name if we already welcomed them
@@ -568,6 +601,7 @@ serve(async (req) => {
     } else if (user.onboarding_step === 4) {
       // Moving to fully onboarded
       updates.onboarding_step = 5;
+      justCompletedOnboarding = true;
       console.log('[SMS] Fully onboarded, advancing to step 5');
     }
 
@@ -589,7 +623,17 @@ serve(async (req) => {
 
     // Generate response with updated user state and full history
     const updatedUser = { ...user, ...updates };
-    const responseMessage = await generateBillieResponse(message, updatedUser, conversationHistory);
+    let responseMessage = await generateBillieResponse(message, updatedUser, conversationHistory);
+
+    // Check if user just completed onboarding and needs to pay
+    if (justCompletedOnboarding && !isUserSubscribed(updatedUser)) {
+      console.log('[SMS] User completed onboarding, needs to subscribe');
+      const paymentUrl = await getPaymentLink(user.id, from);
+      
+      if (paymentUrl) {
+        responseMessage = `ok i'm fully locked in on helping you now 🔥\n\nbut real talk - to keep me as your daily accountability partner, you gotta subscribe\n\nit's $9.99/mo (cheaper than the coffees you're prob wasting lol)\n\nclick here to lock in: ${paymentUrl}\n\nonce you do, i'll start texting you daily check-ins and actually hold you accountable fr`;
+      }
+    }
 
     // Save BILLIE's response to history
     await saveMessage(user.id, 'billie', responseMessage);
