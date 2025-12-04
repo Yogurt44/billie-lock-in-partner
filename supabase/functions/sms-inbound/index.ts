@@ -1,24 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// In-memory user state storage
-// In production, you'd want to use a database
-const userStates: Record<string, {
-  phone: string;
-  name?: string;
-  goals?: string;
-  onboardingStep: 0 | 1 | 2;
-  awaitingCheckIn: boolean;
-}> = {};
+// Initialize Supabase client with service role for full access
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Stub for OpenAI - you can wire this up later
 async function generateAIResponse(prompt: string, context: string): Promise<string | null> {
   // TODO: Wire up OpenAI here for dynamic responses
-  // For now, return null to use hard-coded messages
   console.log(`[AI Stub] Prompt: ${prompt}, Context: ${context}`);
   return null;
 }
@@ -36,7 +31,6 @@ const RESPONSES = {
 };
 
 function parseIncomingSMS(body: string): { from: string; message: string } {
-  // Twilio sends form-urlencoded data
   const params = new URLSearchParams(body);
   const from = params.get('From') || '';
   const message = params.get('Body') || '';
@@ -50,8 +44,56 @@ function createTwiMLResponse(message: string): string {
 </Response>`;
 }
 
+// Get or create user from database
+async function getOrCreateUser(phone: string) {
+  // Try to find existing user
+  const { data: existingUser, error: fetchError } = await supabase
+    .from('billie_users')
+    .select('*')
+    .eq('phone', phone)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('[DB] Error fetching user:', fetchError);
+    throw fetchError;
+  }
+
+  if (existingUser) {
+    console.log(`[DB] Found existing user: ${phone}`);
+    return existingUser;
+  }
+
+  // Create new user
+  console.log(`[DB] Creating new user: ${phone}`);
+  const { data: newUser, error: insertError } = await supabase
+    .from('billie_users')
+    .insert({ phone })
+    .select()
+    .single();
+
+  if (insertError) {
+    console.error('[DB] Error creating user:', insertError);
+    throw insertError;
+  }
+
+  return newUser;
+}
+
+// Update user in database
+async function updateUser(phone: string, updates: Record<string, any>) {
+  const { error } = await supabase
+    .from('billie_users')
+    .update(updates)
+    .eq('phone', phone);
+
+  if (error) {
+    console.error('[DB] Error updating user:', error);
+    throw error;
+  }
+  console.log(`[DB] Updated user ${phone}:`, updates);
+}
+
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -71,66 +113,59 @@ serve(async (req) => {
     const normalizedMessage = message.toLowerCase().trim();
     let responseMessage: string;
 
-    // Get or create user state
-    if (!userStates[from]) {
-      // New user - start onboarding at step 0
-      console.log(`[SMS Inbound] New user: ${from}`);
-      userStates[from] = {
-        phone: from,
-        onboardingStep: 0,
-        awaitingCheckIn: false,
-      };
+    // Get or create user from database
+    const user = await getOrCreateUser(from);
+    console.log(`[SMS Inbound] User state:`, user);
+
+    // Determine if this is a brand new user (no name yet, step 0)
+    const isNewUser = user.onboarding_step === 0 && !user.name;
+
+    if (isNewUser && !message) {
+      // First message from new user
       responseMessage = RESPONSES.welcome;
-    } else {
-      const user = userStates[from];
-      console.log(`[SMS Inbound] Existing user state:`, user);
-
-      // Check if awaiting check-in response first
-      if (user.awaitingCheckIn) {
-        if (normalizedMessage === 'yes' || normalizedMessage === 'y' || normalizedMessage === 'yeah' || normalizedMessage === 'yep' || normalizedMessage === 'yea') {
-          user.awaitingCheckIn = false;
-          responseMessage = RESPONSES.checkInYes;
-          console.log(`[SMS Inbound] Check-in: YES`);
-        } else if (normalizedMessage === 'no' || normalizedMessage === 'n' || normalizedMessage === 'nope' || normalizedMessage === 'nah') {
-          user.awaitingCheckIn = false;
-          responseMessage = RESPONSES.checkInNo;
-          console.log(`[SMS Inbound] Check-in: NO`);
-        } else {
-          responseMessage = "yo just say YES or NO 💀";
-        }
+    } else if (user.awaiting_check_in) {
+      // Handle check-in response
+      if (['yes', 'y', 'yeah', 'yep', 'yea'].includes(normalizedMessage)) {
+        await updateUser(from, { awaiting_check_in: false });
+        responseMessage = RESPONSES.checkInYes;
+        console.log(`[SMS Inbound] Check-in: YES`);
+      } else if (['no', 'n', 'nope', 'nah'].includes(normalizedMessage)) {
+        await updateUser(from, { awaiting_check_in: false });
+        responseMessage = RESPONSES.checkInNo;
+        console.log(`[SMS Inbound] Check-in: NO`);
       } else {
-        // Handle based on onboarding step
-        switch (user.onboardingStep) {
-          case 0:
-            // User is providing their name
-            user.name = message.trim();
-            user.onboardingStep = 1;
-            responseMessage = RESPONSES.afterName(user.name);
-            console.log(`[SMS Inbound] Name set: ${user.name}`);
-            break;
+        responseMessage = "yo just say YES or NO 💀";
+      }
+    } else {
+      // Handle based on onboarding step
+      switch (user.onboarding_step) {
+        case 0:
+          // User is providing their name
+          await updateUser(from, { name: message.trim(), onboarding_step: 1 });
+          responseMessage = RESPONSES.afterName(message.trim());
+          console.log(`[SMS Inbound] Name set: ${message.trim()}`);
+          break;
 
-          case 1:
-            // User is providing their goals
-            user.goals = message.trim();
-            user.onboardingStep = 2;
-            responseMessage = RESPONSES.afterGoals(user.goals);
-            console.log(`[SMS Inbound] Goals set: ${user.goals}`);
-            break;
+        case 1:
+          // User is providing their goals
+          await updateUser(from, { goals: message.trim(), onboarding_step: 2 });
+          responseMessage = RESPONSES.afterGoals(message.trim());
+          console.log(`[SMS Inbound] Goals set: ${message.trim()}`);
+          break;
 
-          case 2:
-            // User is onboarded - check for "check in"
-            if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
-              user.awaitingCheckIn = true;
-              responseMessage = RESPONSES.checkInPrompt;
-              console.log(`[SMS Inbound] Check-in requested`);
-            } else {
-              responseMessage = RESPONSES.alreadyOnboarded(user.goals || 'your goals');
-            }
-            break;
+        case 2:
+          // User is onboarded - check for "check in"
+          if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
+            await updateUser(from, { awaiting_check_in: true });
+            responseMessage = RESPONSES.checkInPrompt;
+            console.log(`[SMS Inbound] Check-in requested`);
+          } else {
+            responseMessage = RESPONSES.alreadyOnboarded(user.goals || 'your goals');
+          }
+          break;
 
-          default:
-            responseMessage = RESPONSES.unknownResponse;
-        }
+        default:
+          responseMessage = RESPONSES.unknownResponse;
       }
     }
 
@@ -140,7 +175,6 @@ serve(async (req) => {
 
     console.log(`[SMS Inbound] Response: "${finalResponse}"`);
 
-    // Return TwiML response for Twilio
     return new Response(createTwiMLResponse(finalResponse), {
       headers: {
         ...corsHeaders,
