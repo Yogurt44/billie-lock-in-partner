@@ -503,29 +503,11 @@ async function updateUser(phone: string, updates: Record<string, any>) {
   console.log(`[DB] User updated:`, Object.keys(updates));
 }
 
-// Generate payment link for a user
-async function getPaymentLink(userId: string, phone: string): Promise<string | null> {
-  try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/create-checkout`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-      },
-      body: JSON.stringify({ user_id: userId, phone, plan: 'monthly' }),
-    });
-
-    if (!response.ok) {
-      console.error('[Payment] Failed to create checkout session');
-      return null;
-    }
-
-    const data = await response.json();
-    return data.url;
-  } catch (error) {
-    console.error('[Payment] Error creating checkout:', error);
-    return null;
-  }
+// Generate pricing page link for a user
+function getPricingLink(userId: string, phone: string): string {
+  const baseUrl = "https://vqfcnpmvzvukdfoitzue.lovableproject.com";
+  const encodedPhone = encodeURIComponent(phone);
+  return `${baseUrl}/pricing?user_id=${userId}&phone=${encodedPhone}`;
 }
 
 // Check if user has active subscription
@@ -628,11 +610,9 @@ serve(async (req) => {
     // Check if user just completed onboarding and needs to pay
     if (justCompletedOnboarding && !isUserSubscribed(updatedUser)) {
       console.log('[SMS] User completed onboarding, needs to subscribe');
-      const paymentUrl = await getPaymentLink(user.id, from);
+      const pricingUrl = getPricingLink(user.id, from);
       
-      if (paymentUrl) {
-        responseMessage = `ok i'm fully locked in on helping you now 🔥\n\nbut real talk - to keep me as your daily accountability partner, you gotta subscribe\n\nit's $9.99/mo (cheaper than the coffees you're prob wasting lol)\n\nclick here to lock in: ${paymentUrl}\n\nonce you do, i'll start texting you daily check-ins and actually hold you accountable fr`;
-      }
+      responseMessage = `ok i'm fully locked in on helping you now 🔥\n\nbut real talk - to keep me as your daily accountability partner, you gotta subscribe\n\nwe got monthly ($9.99) or annual ($79.99 - saves you like $40)\n\npick your plan here: ${pricingUrl}\n\nonce you do, i'll start texting you daily check-ins and actually hold you accountable fr`;
     }
 
     // Save BILLIE's response to history
