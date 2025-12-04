@@ -182,8 +182,9 @@ serve(async (req) => {
     // Determine if this is a brand new user (no name yet, step 0)
     const isNewUser = user.onboarding_step === 0 && !user.name;
 
-    if (isNewUser && !message) {
-      // First message from new user
+    if (isNewUser) {
+      // First contact from new user - always show welcome first
+      // Their next message will be their name
       responseMessage = RESPONSES.welcome;
     } else if (user.awaiting_check_in) {
       // Handle check-in response
@@ -202,10 +203,15 @@ serve(async (req) => {
       // Handle based on onboarding step
       switch (user.onboarding_step) {
         case 0:
-          // User is providing their name
-          await updateUser(from, { name: message.trim(), onboarding_step: 1 });
-          responseMessage = RESPONSES.afterName(message.trim());
-          console.log(`[SMS Inbound] Name set`);
+          // User saw welcome, now providing their name
+          const name = message.trim();
+          if (!name || name.length < 1) {
+            responseMessage = "yo drop ur name so i know what to call u 🙃";
+          } else {
+            await updateUser(from, { name: name, onboarding_step: 1 });
+            responseMessage = RESPONSES.afterName(name);
+            console.log(`[SMS Inbound] Name set`);
+          }
           break;
 
         case 1:
