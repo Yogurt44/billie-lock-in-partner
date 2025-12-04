@@ -1,14 +1,11 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Smartphone } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { MessageSquare } from "lucide-react";
 
-const PHONE_NUMBER = "+15555555555";
+const PHONE_NUMBER = "+18444890104";
 const SMS_BODY = "yo i needa lock in bro 😭";
 
 export const HeroSection = () => {
-  const isMobile = useIsMobile();
-  
   const smsLink = `sms:${PHONE_NUMBER}&body=${encodeURIComponent(SMS_BODY)}`;
 
   return (
@@ -33,10 +30,20 @@ export const HeroSection = () => {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-frost border border-ice/30 mb-8"
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-frost border border-ice/30 mb-6"
           >
             <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Winter 2025</span>
           </motion.div>
+
+          {/* Intro copy */}
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15 }}
+            className="text-lg sm:text-xl text-muted-foreground mb-4"
+          >
+            This winter 2025, let's lock-in with BILLIE.
+          </motion.p>
 
           {/* Main heading */}
           <motion.h1
@@ -65,25 +72,12 @@ export const HeroSection = () => {
             transition={{ duration: 0.6, delay: 0.4 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            {isMobile ? (
-              <Button asChild variant="hero" size="xl" className="group">
-                <a href={smsLink}>
-                  <MessageSquare className="mr-2 transition-transform group-hover:scale-110" />
-                  Start Locking In
-                </a>
-              </Button>
-            ) : (
-              <div className="flex flex-col items-center gap-3">
-                <Button variant="hero" size="xl" className="cursor-default">
-                  <Smartphone className="mr-2" />
-                  Text to Start
-                </Button>
-                <div className="glass px-6 py-3 rounded-xl">
-                  <p className="text-sm text-muted-foreground mb-1">Send a text to</p>
-                  <p className="text-xl font-bold tracking-wide text-foreground">{PHONE_NUMBER}</p>
-                </div>
-              </div>
-            )}
+            <Button asChild variant="hero" size="xl" className="group">
+              <a href={smsLink}>
+                <MessageSquare className="mr-2 transition-transform group-hover:scale-110" />
+                Start Locking In
+              </a>
+            </Button>
           </motion.div>
 
           {/* Social proof hint */}
