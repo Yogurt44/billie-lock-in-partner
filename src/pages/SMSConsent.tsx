@@ -68,7 +68,6 @@ const SMSConsent = () => {
         <section className="mb-8">
           <h2 className="text-2xl font-semibold mb-4">Contact Information</h2>
           <p className="text-muted-foreground">
-            BILLIE is operated by Shannon Nagle<br />
             Email: contact@trybillie.app<br />
             Website: https://trybillie.app
           </p>
