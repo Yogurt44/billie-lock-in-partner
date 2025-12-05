@@ -544,6 +544,64 @@ function isUserSubscribed(user: any): boolean {
   return new Date(user.subscription_end) > new Date();
 }
 
+// Calculate streak updates based on last check-in date
+function calculateStreakUpdates(user: any, isPositiveCheckIn: boolean): Record<string, any> {
+  if (!isPositiveCheckIn) return {};
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+  
+  const lastCheckIn = user.last_check_in_date ? new Date(user.last_check_in_date) : null;
+  
+  // If already checked in today, don't increment again
+  if (lastCheckIn) {
+    const lastCheckInStr = lastCheckIn.toISOString().split('T')[0];
+    if (lastCheckInStr === todayStr) {
+      console.log('[Streak] Already checked in today');
+      return {};
+    }
+  }
+  
+  let newStreak = 1;
+  
+  if (lastCheckIn) {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const lastCheckInStr = lastCheckIn.toISOString().split('T')[0];
+    
+    if (lastCheckInStr === yesterdayStr) {
+      // Consecutive day - increment streak
+      newStreak = (user.current_streak || 0) + 1;
+      console.log(`[Streak] Consecutive day! Streak: ${newStreak}`);
+    } else {
+      // Streak broken - reset to 1
+      console.log('[Streak] Streak broken, resetting to 1');
+    }
+  }
+  
+  const updates: Record<string, any> = {
+    current_streak: newStreak,
+    last_check_in_date: todayStr,
+  };
+  
+  // Update longest streak if needed
+  if (newStreak > (user.longest_streak || 0)) {
+    updates.longest_streak = newStreak;
+    console.log(`[Streak] New longest streak: ${newStreak}`);
+  }
+  
+  return updates;
+}
+
+// Check if message is a positive check-in response
+function isPositiveResponse(message: string): boolean {
+  const normalized = message.toLowerCase().trim();
+  const positiveResponses = ['yes', 'y', 'yeah', 'yep', 'yea', 'yup', 'done', 'did it', 'finished', 'completed', 'yessir', 'yess', 'yesss'];
+  return positiveResponses.some(r => normalized === r || normalized.startsWith(r + ' '));
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -679,6 +737,13 @@ serve(async (req) => {
       } else if (user.awaiting_check_in) {
         updates.awaiting_check_in = false;
         console.log('[Test] Check-in response received');
+        
+        // Track streak if positive response
+        if (isPositiveResponse(message)) {
+          const streakUpdates = calculateStreakUpdates(user, true);
+          Object.assign(updates, streakUpdates);
+          console.log(`[Test] Streak updated: current=${streakUpdates.current_streak || user.current_streak}, longest=${streakUpdates.longest_streak || user.longest_streak}`);
+        }
       }
     }
 
@@ -711,6 +776,9 @@ serve(async (req) => {
         onboarding_step: updatedUser.onboarding_step,
         goals: updatedUser.goals,
         subscription_status: updatedUser.subscription_status,
+        current_streak: updatedUser.current_streak,
+        longest_streak: updatedUser.longest_streak,
+        last_check_in_date: updatedUser.last_check_in_date,
       },
       justCompletedOnboarding,
     }), {
