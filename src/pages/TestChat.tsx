@@ -110,32 +110,17 @@ export default function TestChat() {
 
   const resetConversation = async () => {
     try {
-      // Delete test user's messages first
-      const { data: testUser } = await supabase
-        .from("billie_users")
-        .select("id")
-        .eq("phone", "+1TEST000000")
-        .maybeSingle();
-
-      if (testUser) {
-        await supabase
-          .from("billie_messages")
-          .delete()
-          .eq("user_id", testUser.id);
-      }
-
-      // Then delete the test user
-      await supabase
-        .from("billie_users")
-        .delete()
-        .eq("phone", "+1TEST000000");
+      const sessionToken = localStorage.getItem("billie-test-session");
+      await supabase.functions.invoke("test-chat", {
+        body: { action: "reset", sessionToken, testPhone: "+1TEST000000" },
+      });
+      setMessages([]);
+      setUserState(null);
+      toast.success("Conversation reset! Start fresh.");
     } catch (e) {
-      console.error("Error:", e);
+      console.error("Reset error:", e);
+      toast.error("Failed to reset");
     }
-
-    setMessages([]);
-    setUserState(null);
-    toast.success("Conversation reset! Start fresh.");
   };
 
   // Password gate
