@@ -154,6 +154,31 @@ function sanitizeInput(input: string, maxLength: number = 500): string {
     .replace(/[\x00-\x1F\x7F]/g, ''); // Remove control characters
 }
 
+// Check if a message looks like actual goals (not just a greeting or typo)
+function looksLikeGoals(message: string): boolean {
+  const normalized = message.toLowerCase().trim();
+  
+  // Common greetings/non-goals - don't save these as goals
+  const nonGoals = [
+    'hi', 'hey', 'hello', 'helo', 'yo', 'sup', 'hii', 'heyo', 'heyy',
+    'ok', 'okay', 'k', 'sure', 'yes', 'no', 'yeah', 'nah', 'yea', 'yep', 'nope',
+    'what', 'huh', 'hmm', 'um', 'idk', 'lol', 'lmao', 'haha',
+    'thanks', 'thx', 'ty', 'cool', 'nice', 'bet', 'word', 'aight'
+  ];
+  
+  if (nonGoals.includes(normalized)) {
+    return false;
+  }
+  
+  // Too short to be meaningful goals (less than 15 chars or 3 words)
+  const wordCount = message.split(/\s+/).filter(w => w.length > 0).length;
+  if (message.length < 15 || wordCount < 3) {
+    return false;
+  }
+  
+  return true;
+}
+
 // Validate Twilio webhook signature
 function validateTwilioSignature(
   signature: string | null,
@@ -389,9 +414,9 @@ async function generateBillieResponse(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-pro", // Upgraded for better understanding
         messages,
-        max_tokens: 400,
+        max_tokens: 500,
       }),
     });
 
@@ -599,10 +624,14 @@ serve(async (req) => {
       updates.onboarding_step = 2;
       console.log('[SMS] Got age/context, advancing to step 2');
     } else if (user.onboarding_step === 2) {
-      // They're sharing their goals - sanitize: max 1000 chars
-      updates.goals = sanitizeInput(message, 1000);
-      updates.onboarding_step = 3;
-      console.log('[SMS] Got goals, advancing to step 3');
+      // Only save as goals if it actually looks like goals (not greetings/typos)
+      if (looksLikeGoals(message)) {
+        updates.goals = sanitizeInput(message, 1000);
+        updates.onboarding_step = 3;
+        console.log('[SMS] Got goals, advancing to step 3');
+      } else {
+        console.log('[SMS] Message does not look like goals, staying at step 2');
+      }
     } else if (user.onboarding_step === 3) {
       // Continuing the goal conversation - dig deeper
       updates.onboarding_step = 4;
