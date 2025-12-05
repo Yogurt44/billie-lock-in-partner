@@ -50,40 +50,55 @@ export type Database = {
         Row: {
           awaiting_check_in: boolean
           created_at: string
+          current_streak: number
           goals: string | null
           id: string
+          last_check_in_date: string | null
+          longest_streak: number
           name: string | null
           onboarding_step: number
           phone: string
+          preferred_check_in_time: string | null
           stripe_customer_id: string | null
           subscription_end: string | null
           subscription_status: string | null
+          timezone: string | null
           updated_at: string
         }
         Insert: {
           awaiting_check_in?: boolean
           created_at?: string
+          current_streak?: number
           goals?: string | null
           id?: string
+          last_check_in_date?: string | null
+          longest_streak?: number
           name?: string | null
           onboarding_step?: number
           phone: string
+          preferred_check_in_time?: string | null
           stripe_customer_id?: string | null
           subscription_end?: string | null
           subscription_status?: string | null
+          timezone?: string | null
           updated_at?: string
         }
         Update: {
           awaiting_check_in?: boolean
           created_at?: string
+          current_streak?: number
           goals?: string | null
           id?: string
+          last_check_in_date?: string | null
+          longest_streak?: number
           name?: string | null
           onboarding_step?: number
           phone?: string
+          preferred_check_in_time?: string | null
           stripe_customer_id?: string | null
           subscription_end?: string | null
           subscription_status?: string | null
+          timezone?: string | null
           updated_at?: string
         }
         Relationships: []

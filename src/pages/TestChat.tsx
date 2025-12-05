@@ -16,6 +16,9 @@ interface UserState {
   onboarding_step: number;
   goals: string | null;
   subscription_status: string | null;
+  current_streak: number;
+  longest_streak: number;
+  last_check_in_date: string | null;
 }
 
 // Password is verified server-side only - never stored in client code
@@ -290,6 +293,12 @@ export default function TestChat() {
             </span>
             <span>
               Sub: {userState.subscription_status || "none"}
+            </span>
+            <span className="text-orange-400">
+              🔥 Streak: {userState.current_streak || 0}
+            </span>
+            <span>
+              Best: {userState.longest_streak || 0}
             </span>
           </div>
         </div>
