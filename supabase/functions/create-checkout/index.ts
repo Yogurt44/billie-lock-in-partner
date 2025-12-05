@@ -19,31 +19,45 @@ serve(async (req) => {
   }
 
   try {
-    const { user_id, phone, plan = "monthly" } = await req.json();
+    // Only accept phone - lookup user_id from database to prevent spoofing
+    const { phone, plan = "monthly" } = await req.json();
     
-    if (!user_id || !phone) {
-      throw new Error("user_id and phone are required");
+    if (!phone) {
+      throw new Error("phone is required");
     }
 
-    console.log(`[Checkout] Creating session for user ${user_id}, plan: ${plan}`);
+    // Validate phone format (basic E.164 validation)
+    const phoneRegex = /^\+[1-9]\d{1,14}$/;
+    if (!phoneRegex.test(phone)) {
+      throw new Error("Invalid phone format");
+    }
 
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
-      apiVersion: "2025-08-27.basil",
-    });
+    console.log(`[Checkout] Creating session for phone (masked), plan: ${plan}`);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // Check if user already has a Stripe customer ID
-    const { data: user } = await supabase
+    // SECURITY: Look up user by phone instead of accepting user_id from request
+    // This prevents attackers from creating checkout sessions for arbitrary users
+    const { data: user, error: userError } = await supabase
       .from('billie_users')
-      .select('stripe_customer_id')
-      .eq('id', user_id)
+      .select('id, stripe_customer_id')
+      .eq('phone', phone)
       .single();
 
-    let customerId = user?.stripe_customer_id;
+    if (userError || !user) {
+      console.error("[Checkout] User not found for phone");
+      throw new Error("User not found");
+    }
+
+    const user_id = user.id;
+    let customerId = user.stripe_customer_id;
+
+    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+      apiVersion: "2025-08-27.basil",
+    });
 
     // If no customer, create one
     if (!customerId) {
@@ -51,7 +65,6 @@ serve(async (req) => {
         phone: phone,
         metadata: {
           billie_user_id: user_id,
-          phone: phone,
         },
       });
       customerId = customer.id;
@@ -62,7 +75,7 @@ serve(async (req) => {
         .update({ stripe_customer_id: customerId })
         .eq('id', user_id);
 
-      console.log(`[Checkout] Created Stripe customer ${customerId}`);
+      console.log(`[Checkout] Created Stripe customer`);
     }
 
     const priceId = plan === "annual" ? PRICES.annual : PRICES.monthly;
@@ -81,17 +94,15 @@ serve(async (req) => {
       cancel_url: `${origin}/`,
       metadata: {
         billie_user_id: user_id,
-        phone: phone,
       },
       subscription_data: {
         metadata: {
           billie_user_id: user_id,
-          phone: phone,
         },
       },
     });
 
-    console.log(`[Checkout] Session created: ${session.id}`);
+    console.log(`[Checkout] Session created`);
 
     return new Response(JSON.stringify({ url: session.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
