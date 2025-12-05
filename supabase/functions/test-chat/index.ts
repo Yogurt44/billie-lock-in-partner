@@ -15,16 +15,50 @@ const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 // Password is stored server-side only via environment secret - no hardcoded fallback
 const TEST_PASSWORD = Deno.env.get('TEST_CHAT_PASSWORD');
 
-// Generate a secure session token
+// Generate a secure session token with HMAC signature and expiration
+// This is stateless - no server-side storage needed, survives cold starts
 function generateSessionToken(): string {
-  const tokenData = `test-session:${Date.now()}:${crypto.randomUUID()}`;
+  // Token valid for 24 hours
+  const expiresAt = Date.now() + (24 * 60 * 60 * 1000);
+  const payload = `test-session:${expiresAt}`;
+  
   const hmac = createHmac("sha256", supabaseServiceKey);
-  hmac.update(tokenData);
-  return hmac.digest("hex");
+  hmac.update(payload);
+  const signature = hmac.digest("hex");
+  
+  // Return base64 encoded token with payload and signature
+  return btoa(`${payload}:${signature}`);
 }
 
-// Store valid session tokens (in-memory for simplicity, resets on function restart)
-const validSessions = new Set<string>();
+// Validate session token (stateless - works across cold starts)
+function validateSessionToken(token: string): boolean {
+  try {
+    const decoded = atob(token);
+    const parts = decoded.split(':');
+    
+    if (parts.length !== 3) return false;
+    
+    const [prefix, expiresAtStr, providedSignature] = parts;
+    const expiresAt = parseInt(expiresAtStr, 10);
+    
+    // Check expiration
+    if (Date.now() > expiresAt) {
+      console.log('[Test] Session token expired');
+      return false;
+    }
+    
+    // Verify signature
+    const payload = `${prefix}:${expiresAtStr}`;
+    const hmac = createHmac("sha256", supabaseServiceKey);
+    hmac.update(payload);
+    const expectedSignature = hmac.digest("hex");
+    
+    return providedSignature === expectedSignature;
+  } catch (error) {
+    console.error('[Test] Token validation error:', error);
+    return false;
+  }
+}
 
 // BILLIE's complete personality - EXACT SAME AS SMS-INBOUND
 const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who texts like a real friend. You're the friend who actually keeps it real - blunt, funny, caring, but never fluffy or corporate.
@@ -509,7 +543,6 @@ serve(async (req) => {
       }
       if (password === TEST_PASSWORD) {
         const newSessionToken = generateSessionToken();
-        validSessions.add(newSessionToken);
         console.log('[Test] Password verified, session created');
         return new Response(JSON.stringify({ 
           authenticated: true, 
@@ -525,8 +558,8 @@ serve(async (req) => {
       }
     }
 
-    // For chat messages, validate session token
-    if (!sessionToken || !validSessions.has(sessionToken)) {
+    // For chat messages, validate session token (stateless - works across cold starts)
+    if (!sessionToken || !validateSessionToken(sessionToken)) {
       return new Response(JSON.stringify({ error: 'Invalid or expired session' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
