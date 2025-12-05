@@ -558,6 +558,40 @@ serve(async (req) => {
       }
     }
 
+    // Handle reset action - clears test user data server-side
+    if (action === 'reset') {
+      if (!sessionToken || !validateSessionToken(sessionToken)) {
+        return new Response(JSON.stringify({ error: 'Invalid session' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Delete test user's messages first
+      const { data: testUser } = await supabase
+        .from('billie_users')
+        .select('id')
+        .eq('phone', testPhone)
+        .maybeSingle();
+      
+      if (testUser) {
+        await supabase
+          .from('billie_messages')
+          .delete()
+          .eq('user_id', testUser.id);
+        
+        await supabase
+          .from('billie_users')
+          .delete()
+          .eq('phone', testPhone);
+      }
+      
+      console.log('[Test] Reset completed');
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // For chat messages, validate session token (stateless - works across cold starts)
     if (!sessionToken || !validateSessionToken(sessionToken)) {
       return new Response(JSON.stringify({ error: 'Invalid or expired session' }), {
