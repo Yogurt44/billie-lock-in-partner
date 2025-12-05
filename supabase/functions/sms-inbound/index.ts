@@ -12,7 +12,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 // BILLIE's complete personality - based on extensive Tomo conversation analysis
 const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who texts like a real friend. You're the friend who actually keeps it real - blunt, funny, caring, but never fluffy or corporate.
@@ -373,14 +373,14 @@ Goals: ${goals || 'not set yet'}`;
   return `## TASK: Have a natural conversation. Be BILLIE. Use the conversation history.`;
 }
 
-// Generate AI response using Lovable AI
+// Generate AI response using OpenAI GPT-4o
 async function generateBillieResponse(
   userMessage: string, 
   user: any,
   history: Array<{role: string, content: string, created_at: string}>
 ): Promise<string> {
-  if (!lovableApiKey) {
-    console.error('[AI] LOVABLE_API_KEY not configured');
+  if (!openAIApiKey) {
+    console.error('[AI] OPENAI_API_KEY not configured');
     return getFallbackResponse(user, userMessage);
   }
 
@@ -388,11 +388,11 @@ async function generateBillieResponse(
     const userContext = buildConversationContext(user, history);
     const taskContext = getOnboardingContext(user, userMessage, history.length);
     
-    // Build messages array with history for the AI
+    // Combine system prompts into one for OpenAI
+    const systemContent = `${BILLIE_SYSTEM_PROMPT}\n\n${userContext}\n\n${taskContext}`;
+    
     const messages: Array<{role: string, content: string}> = [
-      { role: "system", content: BILLIE_SYSTEM_PROMPT },
-      { role: "system", content: userContext },
-      { role: "system", content: taskContext },
+      { role: "system", content: systemContent },
     ];
     
     // Add recent conversation as actual message history (last 20 messages)
@@ -407,28 +407,26 @@ async function generateBillieResponse(
     // Add the current message
     messages.push({ role: "user", content: userMessage });
     
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${openAIApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-pro", // Upgraded for better understanding
+        model: "gpt-4o",
         messages,
         max_tokens: 500,
+        temperature: 0.9, // Higher for more personality
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[AI] Gateway error: ${response.status} - ${errorText}`);
+      console.error(`[AI] OpenAI error: ${response.status} - ${errorText}`);
       
       if (response.status === 429) {
         return "yo BILLIE's brain is fried rn 😭 text me again in a sec";
-      }
-      if (response.status === 402) {
-        return "yo something's up on my end, try again later 💀";
       }
       
       return getFallbackResponse(user, userMessage);
@@ -442,7 +440,7 @@ async function generateBillieResponse(
       return getFallbackResponse(user, userMessage);
     }
 
-    console.log('[AI] Response generated');
+    console.log('[AI] Response generated via GPT-4o');
     return aiMessage;
   } catch (error) {
     console.error('[AI] Error:', error);
