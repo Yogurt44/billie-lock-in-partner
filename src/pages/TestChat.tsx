@@ -1,0 +1,191 @@
+import { useState, useRef, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Send, Trash2, ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+
+interface Message {
+  role: "user" | "billie";
+  content: string;
+}
+
+interface UserState {
+  name: string | null;
+  onboarding_step: number;
+  goals: string | null;
+}
+
+export default function TestChat() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [userState, setUserState] = useState<UserState | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+
+    const userMessage = input.trim();
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    setIsLoading(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("test-chat", {
+        body: { message: userMessage },
+      });
+
+      if (error) throw error;
+
+      setMessages((prev) => [...prev, { role: "billie", content: data.response }]);
+      setUserState(data.user);
+    } catch (error) {
+      console.error("Error:", error);
+      toast.error("Failed to get response. Try again.");
+    } finally {
+      setIsLoading(false);
+      inputRef.current?.focus();
+    }
+  };
+
+  const resetConversation = async () => {
+    // Delete test user data
+    try {
+      const { error } = await supabase
+        .from("billie_users")
+        .delete()
+        .eq("phone", "+1TEST000000");
+      
+      if (error) console.error("Error deleting test user:", error);
+    } catch (e) {
+      console.error("Error:", e);
+    }
+    
+    setMessages([]);
+    setUserState(null);
+    toast.success("Conversation reset!");
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Header */}
+      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link to="/">
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            </Link>
+            <div>
+              <h1 className="font-bold text-lg">BILLIE Test Chat</h1>
+              <p className="text-xs text-muted-foreground">
+                Step {userState?.onboarding_step ?? 0}/5 • {userState?.name || "New User"}
+              </p>
+            </div>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={resetConversation}
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </header>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+          {messages.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground mb-2">Send a message to start testing BILLIE</p>
+              <p className="text-sm text-muted-foreground/70">
+                Try saying "hey" or "hi" to begin onboarding
+              </p>
+            </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground rounded-br-sm"
+                    : "bg-muted rounded-bl-sm"
+                }`}
+              >
+                {msg.content.split("\n\n").map((bubble, j) => (
+                  <p key={j} className={j > 0 ? "mt-3" : ""}>
+                    {bubble}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {isLoading && (
+            <div className="flex justify-start">
+              <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3">
+                <div className="flex gap-1">
+                  <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* User State Debug */}
+      {userState && (
+        <div className="border-t border-border/50 bg-muted/30 px-4 py-2">
+          <div className="max-w-2xl mx-auto text-xs text-muted-foreground flex flex-wrap gap-4">
+            <span>Step: {userState.onboarding_step}</span>
+            <span>Name: {userState.name || "—"}</span>
+            <span className="truncate max-w-[200px]">Goals: {userState.goals || "—"}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Input */}
+      <div className="border-t border-border/50 bg-card/50 backdrop-blur-sm">
+        <form onSubmit={sendMessage} className="max-w-2xl mx-auto px-4 py-3">
+          <div className="flex gap-2">
+            <Input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a message..."
+              disabled={isLoading}
+              className="flex-1"
+              autoFocus
+            />
+            <Button type="submit" disabled={!input.trim() || isLoading} size="icon">
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
