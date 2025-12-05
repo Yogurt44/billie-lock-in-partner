@@ -41,11 +41,25 @@ export default function Pricing() {
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState<string | null>(null);
   
-  const userId = searchParams.get("user_id");
-  const phone = searchParams.get("phone");
+  // Support both legacy (user_id/phone) and new secure token format
+  const token = searchParams.get("token");
+  const legacyUserId = searchParams.get("user_id");
+  const legacyPhone = searchParams.get("phone");
+  
+  // Decode token if present, otherwise use legacy params
+  let phone: string | null = legacyPhone;
+  if (token) {
+    try {
+      const decoded = atob(token);
+      const [, decodedPhone] = decoded.split(":");
+      phone = decodedPhone || null;
+    } catch {
+      // Invalid token - phone will be null
+    }
+  }
 
   const handleSelectPlan = async (planId: string) => {
-    if (!userId || !phone) {
+    if (!phone) {
       toast.error("Missing user information. Please use the link from your SMS.");
       return;
     }
@@ -53,8 +67,9 @@ export default function Pricing() {
     setLoading(planId);
     
     try {
+      // Only send phone - server looks up user securely
       const { data, error } = await supabase.functions.invoke("create-checkout", {
-        body: { user_id: userId, phone, plan: planId },
+        body: { phone, plan: planId },
       });
 
       if (error) throw error;
