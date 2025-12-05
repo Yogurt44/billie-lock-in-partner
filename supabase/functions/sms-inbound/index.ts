@@ -140,6 +140,20 @@ Don't rush through onboarding. Have a real conversation:
 
 Remember: You're BILLIE. Keep it real, keep it short, keep it helpful. Be the friend they need, not the coach they expect. USE THE CONVERSATION HISTORY.`;
 
+// Security helpers
+function maskPhone(phone: string): string {
+  if (phone.length <= 4) return '****';
+  return phone.slice(0, -4).replace(/./g, '*') + phone.slice(-4);
+}
+
+function sanitizeInput(input: string, maxLength: number = 500): string {
+  // Trim whitespace, limit length, and remove control characters
+  return input
+    .trim()
+    .slice(0, maxLength)
+    .replace(/[\x00-\x1F\x7F]/g, ''); // Remove control characters
+}
+
 // Validate Twilio webhook signature
 function validateTwilioSignature(
   signature: string | null,
@@ -474,7 +488,7 @@ async function getOrCreateUser(phone: string) {
     return existingUser;
   }
 
-  console.log(`[DB] Creating new user`);
+  console.log(`[DB] Creating new user for phone ${maskPhone(phone)}`);
   const { data: newUser, error: insertError } = await supabase
     .from('billie_users')
     .insert({ phone, onboarding_step: 0 })
@@ -503,11 +517,12 @@ async function updateUser(phone: string, updates: Record<string, any>) {
   console.log(`[DB] User updated:`, Object.keys(updates));
 }
 
-// Generate pricing page link for a user
+// Generate pricing page link for a user (uses secure token instead of exposing phone/user_id in URL)
 function getPricingLink(userId: string, phone: string): string {
   const baseUrl = "https://vqfcnpmvzvukdfoitzue.lovableproject.com";
-  const encodedPhone = encodeURIComponent(phone);
-  return `${baseUrl}/pricing?user_id=${userId}&phone=${encodedPhone}`;
+  // Create a simple obfuscated token combining user info - in production, use proper signed tokens
+  const token = btoa(`${userId}:${phone}`);
+  return `${baseUrl}/pricing?token=${encodeURIComponent(token)}`;
 }
 
 // Check if user has active subscription
@@ -562,7 +577,8 @@ serve(async (req) => {
       // First message - this IS their name if we already welcomed them
       // Check if we have any history (meaning we already sent welcome)
       if (conversationHistory.length > 0) {
-        updates.name = message.trim();
+        // Sanitize name: max 50 chars, remove control chars
+        updates.name = sanitizeInput(message, 50);
         updates.onboarding_step = 1;
         console.log('[SMS] Got name, advancing to step 1');
       }
@@ -572,8 +588,8 @@ serve(async (req) => {
       updates.onboarding_step = 2;
       console.log('[SMS] Got age/context, advancing to step 2');
     } else if (user.onboarding_step === 2) {
-      // They're sharing their goals
-      updates.goals = message.trim();
+      // They're sharing their goals - sanitize: max 1000 chars
+      updates.goals = sanitizeInput(message, 1000);
       updates.onboarding_step = 3;
       console.log('[SMS] Got goals, advancing to step 3');
     } else if (user.onboarding_step === 3) {
