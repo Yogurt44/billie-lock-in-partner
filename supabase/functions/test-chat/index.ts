@@ -219,14 +219,13 @@ function looksLikeGoals(message: string): boolean {
   return true;
 }
 
-// Get full conversation history for a user - EXACT SAME
+// Get FULL conversation history for a user - NO LIMIT
 async function getConversationHistory(userId: string): Promise<Array<{role: string, content: string, created_at: string}>> {
   const { data, error } = await supabase
     .from('billie_messages')
     .select('role, content, created_at')
     .eq('user_id', userId)
-    .order('created_at', { ascending: true })
-    .limit(100);
+    .order('created_at', { ascending: true });
 
   if (error) {
     console.error('[DB] Error fetching conversation history:', error);
@@ -393,8 +392,8 @@ async function generateBillieResponse(
       { role: "system", content: systemContent },
     ];
     
-    const recentHistory = history.slice(-20);
-    for (const msg of recentHistory) {
+    // Send FULL conversation history to OpenAI - BILLIE needs to remember everything
+    for (const msg of history) {
       messages.push({
         role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content
