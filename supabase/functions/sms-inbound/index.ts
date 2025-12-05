@@ -517,11 +517,22 @@ async function updateUser(phone: string, updates: Record<string, any>) {
   console.log(`[DB] User updated:`, Object.keys(updates));
 }
 
-// Generate pricing page link for a user (uses secure token instead of exposing phone/user_id in URL)
+// Generate pricing page link for a user with HMAC-signed token
 function getPricingLink(userId: string, phone: string): string {
   const baseUrl = "https://vqfcnpmvzvukdfoitzue.lovableproject.com";
-  // Create a simple obfuscated token combining user info - in production, use proper signed tokens
-  const token = btoa(`${userId}:${phone}`);
+  const tokenSecret = Deno.env.get('TWILIO_AUTH_TOKEN') || 'fallback-secret';
+  
+  // Create expiring signed token (valid for 24 hours)
+  const expiresAt = Date.now() + (24 * 60 * 60 * 1000);
+  const payload = `${userId}:${phone}:${expiresAt}`;
+  
+  // Sign with HMAC-SHA256
+  const hmac = createHmac("sha256", tokenSecret);
+  hmac.update(payload);
+  const signature = hmac.digest("hex");
+  
+  // Combine payload and signature
+  const token = btoa(`${payload}:${signature}`);
   return `${baseUrl}/pricing?token=${encodeURIComponent(token)}`;
 }
 

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,46 +14,87 @@ const PRICES = {
   annual: "price_1SaijMAQ7IuLqpQmGZsiKGZX",  // $79.99/year
 };
 
+// Verify HMAC-signed token
+function verifyToken(token: string): { userId: string; phone: string; valid: boolean } {
+  try {
+    const tokenSecret = Deno.env.get('TWILIO_AUTH_TOKEN') || 'fallback-secret';
+    const decoded = atob(token);
+    const parts = decoded.split(':');
+    
+    if (parts.length !== 4) {
+      console.error('[Checkout] Invalid token format');
+      return { userId: '', phone: '', valid: false };
+    }
+    
+    const [userId, phone, expiresAt, providedSignature] = parts;
+    
+    // Check expiration
+    const expiry = parseInt(expiresAt, 10);
+    if (Date.now() > expiry) {
+      console.error('[Checkout] Token expired');
+      return { userId: '', phone: '', valid: false };
+    }
+    
+    // Verify signature
+    const payload = `${userId}:${phone}:${expiresAt}`;
+    const hmac = createHmac("sha256", tokenSecret);
+    hmac.update(payload);
+    const expectedSignature = hmac.digest("hex");
+    
+    if (providedSignature !== expectedSignature) {
+      console.error('[Checkout] Invalid token signature');
+      return { userId: '', phone: '', valid: false };
+    }
+    
+    return { userId, phone, valid: true };
+  } catch (error) {
+    console.error('[Checkout] Token verification error:', error);
+    return { userId: '', phone: '', valid: false };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Only accept phone - lookup user_id from database to prevent spoofing
-    const { phone, plan = "monthly" } = await req.json();
+    const { token, plan = "monthly" } = await req.json();
     
-    if (!phone) {
-      throw new Error("phone is required");
+    if (!token) {
+      // Generic error - don't reveal what's missing
+      throw new Error("Unable to process request");
     }
 
-    // Validate phone format (basic E.164 validation)
-    const phoneRegex = /^\+[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(phone)) {
-      throw new Error("Invalid phone format");
+    // Verify the signed token
+    const { userId: user_id, phone, valid } = verifyToken(token);
+    
+    if (!valid || !user_id || !phone) {
+      // Generic error - don't reveal token validation details
+      throw new Error("Unable to process request");
     }
 
-    console.log(`[Checkout] Creating session for phone (masked), plan: ${plan}`);
+    console.log(`[Checkout] Creating session for verified token, plan: ${plan}`);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // SECURITY: Look up user by phone instead of accepting user_id from request
-    // This prevents attackers from creating checkout sessions for arbitrary users
+    // Verify user exists and matches token data
     const { data: user, error: userError } = await supabase
       .from('billie_users')
       .select('id, stripe_customer_id')
+      .eq('id', user_id)
       .eq('phone', phone)
-      .single();
+      .maybeSingle();
 
     if (userError || !user) {
-      console.error("[Checkout] User not found for phone");
-      throw new Error("User not found");
+      // SECURITY: Generic error - don't reveal if user exists
+      console.error("[Checkout] User verification failed");
+      throw new Error("Unable to process request");
     }
 
-    const user_id = user.id;
     let customerId = user.stripe_customer_id;
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
@@ -110,8 +152,8 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error("[Checkout] Error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    // SECURITY: Always return generic error to client
+    return new Response(JSON.stringify({ error: "Unable to process request" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });
