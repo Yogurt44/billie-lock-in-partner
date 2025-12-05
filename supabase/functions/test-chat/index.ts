@@ -12,8 +12,8 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
-// Password is stored server-side only - never exposed to client
-const TEST_PASSWORD = Deno.env.get('TEST_CHAT_PASSWORD') || "billie2025";
+// Password is stored server-side only via environment secret - no hardcoded fallback
+const TEST_PASSWORD = Deno.env.get('TEST_CHAT_PASSWORD');
 
 // Generate a secure session token
 function generateSessionToken(): string {
@@ -498,6 +498,15 @@ serve(async (req) => {
 
     // Handle password verification action
     if (action === 'verify-password') {
+      if (!TEST_PASSWORD) {
+        console.error('[Test] TEST_CHAT_PASSWORD secret not configured');
+        return new Response(JSON.stringify({ 
+          authenticated: false, 
+          error: 'Test chat not configured' 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       if (password === TEST_PASSWORD) {
         const newSessionToken = generateSessionToken();
         validSessions.add(newSessionToken);
