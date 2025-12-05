@@ -12,8 +12,19 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
-// Simple password protection - change this to your own secret!
-const TEST_PASSWORD = "billie2025";
+// Password is stored server-side only - never exposed to client
+const TEST_PASSWORD = Deno.env.get('TEST_CHAT_PASSWORD') || "billie2025";
+
+// Generate a secure session token
+function generateSessionToken(): string {
+  const tokenData = `test-session:${Date.now()}:${crypto.randomUUID()}`;
+  const hmac = createHmac("sha256", supabaseServiceKey);
+  hmac.update(tokenData);
+  return hmac.digest("hex");
+}
+
+// Store valid session tokens (in-memory for simplicity, resets on function restart)
+const validSessions = new Set<string>();
 
 // BILLIE's complete personality - EXACT SAME AS SMS-INBOUND
 const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who texts like a real friend. You're the friend who actually keeps it real - blunt, funny, caring, but never fluffy or corporate.
@@ -482,11 +493,32 @@ serve(async (req) => {
   }
 
   try {
-    const { message, password, testPhone = '+1TEST000000' } = await req.json();
+    const body = await req.json();
+    const { action, message, password, sessionToken, testPhone = '+1TEST000000' } = body;
 
-    // Password protection
-    if (password !== TEST_PASSWORD) {
-      return new Response(JSON.stringify({ error: 'Invalid password' }), {
+    // Handle password verification action
+    if (action === 'verify-password') {
+      if (password === TEST_PASSWORD) {
+        const newSessionToken = generateSessionToken();
+        validSessions.add(newSessionToken);
+        console.log('[Test] Password verified, session created');
+        return new Response(JSON.stringify({ 
+          authenticated: true, 
+          sessionToken: newSessionToken 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } else {
+        console.log('[Test] Invalid password attempt');
+        return new Response(JSON.stringify({ authenticated: false }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // For chat messages, validate session token
+    if (!sessionToken || !validSessions.has(sessionToken)) {
+      return new Response(JSON.stringify({ error: 'Invalid or expired session' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

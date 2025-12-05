@@ -18,7 +18,7 @@ interface UserState {
   subscription_status: string | null;
 }
 
-const TEST_PASSWORD = "billie2025"; // Must match edge function
+// Password is verified server-side only - never stored in client code
 
 export default function TestChat() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -38,22 +38,35 @@ export default function TestChat() {
     scrollToBottom();
   }, [messages]);
 
-  // Check localStorage for saved auth
+  // Check localStorage for saved auth session
   useEffect(() => {
-    const savedAuth = localStorage.getItem("billie-test-auth");
-    if (savedAuth === TEST_PASSWORD) {
+    const savedSession = localStorage.getItem("billie-test-session");
+    if (savedSession) {
       setIsAuthenticated(true);
     }
   }, []);
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput === TEST_PASSWORD) {
-      setIsAuthenticated(true);
-      localStorage.setItem("billie-test-auth", TEST_PASSWORD);
-      toast.success("Access granted!");
-    } else {
-      toast.error("Wrong password");
+    try {
+      // Verify password server-side
+      const { data, error } = await supabase.functions.invoke("test-chat", {
+        body: { action: "verify-password", password: passwordInput },
+      });
+
+      if (error) throw error;
+
+      if (data.authenticated) {
+        setIsAuthenticated(true);
+        // Store session token (not the password)
+        localStorage.setItem("billie-test-session", data.sessionToken);
+        toast.success("Access granted!");
+      } else {
+        toast.error("Wrong password");
+      }
+    } catch (error) {
+      console.error("Auth error:", error);
+      toast.error("Authentication failed");
     }
   };
 
@@ -67,8 +80,9 @@ export default function TestChat() {
     setIsLoading(true);
 
     try {
+      const sessionToken = localStorage.getItem("billie-test-session");
       const { data, error } = await supabase.functions.invoke("test-chat", {
-        body: { message: userMessage, password: TEST_PASSWORD },
+        body: { message: userMessage, sessionToken },
       });
 
       if (error) throw error;
