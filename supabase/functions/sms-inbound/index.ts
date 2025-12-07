@@ -179,6 +179,165 @@ function looksLikeGoals(message: string): boolean {
   return true;
 }
 
+// Parse numbered goals from user message (e.g., "1. gym 2. read 3. meditate")
+function parseNumberedGoals(message: string): string[] {
+  const goals: string[] = [];
+  
+  // Match patterns like "1. goal" or "1) goal" or "1 goal" or just newline-separated
+  const patterns = [
+    /(?:^|\n)\s*\d+[.)]\s*(.+?)(?=(?:\n\s*\d+[.)]|\n*$))/gi,
+    /(?:^|\n)\s*[-•]\s*(.+?)(?=(?:\n\s*[-•]|\n*$))/gi,
+  ];
+  
+  for (const pattern of patterns) {
+    const matches = message.matchAll(pattern);
+    for (const match of matches) {
+      const goal = match[1]?.trim();
+      if (goal && goal.length > 2) {
+        goals.push(goal);
+      }
+    }
+    if (goals.length > 0) break;
+  }
+  
+  // If no numbered format found, try splitting by newlines
+  if (goals.length === 0) {
+    const lines = message.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+    if (lines.length > 1) {
+      goals.push(...lines);
+    } else if (lines.length === 1) {
+      // Single goal
+      goals.push(lines[0]);
+    }
+  }
+  
+  // Limit to 5 goals max
+  return goals.slice(0, 5);
+}
+
+// Save parsed goals to billie_goals table
+async function saveUserGoals(userId: string, goals: string[]): Promise<void> {
+  if (goals.length === 0) return;
+  
+  // Delete existing active goals first
+  await supabase
+    .from('billie_goals')
+    .update({ is_active: false })
+    .eq('user_id', userId);
+  
+  // Insert new goals
+  const goalsToInsert = goals.map((goal, index) => ({
+    user_id: userId,
+    goal_number: index + 1,
+    goal_text: sanitizeInput(goal, 200),
+    is_active: true,
+  }));
+  
+  const { error } = await supabase
+    .from('billie_goals')
+    .insert(goalsToInsert);
+  
+  if (error) {
+    console.error('[Goals] Error saving goals:', error);
+  } else {
+    console.log(`[Goals] Saved ${goals.length} goals for user`);
+  }
+}
+
+// Get user's active goals
+async function getUserGoals(userId: string): Promise<Array<{id: string, goal_number: number, goal_text: string, current_streak: number}>> {
+  const { data, error } = await supabase
+    .from('billie_goals')
+    .select('id, goal_number, goal_text, current_streak')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('goal_number', { ascending: true });
+  
+  if (error) {
+    console.error('[Goals] Error fetching goals:', error);
+    return [];
+  }
+  
+  return data || [];
+}
+
+// Update streak for a specific goal
+async function updateGoalStreak(goalId: string, currentStreak: number, longestStreak: number): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  
+  const updates: Record<string, any> = {
+    last_check_in_date: today,
+    current_streak: currentStreak,
+  };
+  
+  if (currentStreak > longestStreak) {
+    updates.longest_streak = currentStreak;
+  }
+  
+  await supabase
+    .from('billie_goals')
+    .update(updates)
+    .eq('id', goalId);
+}
+
+// Handle MMS photo upload
+async function handlePhotoProof(userId: string, mediaUrl: string, goalId?: string): Promise<string | null> {
+  try {
+    // Fetch the image from Twilio's URL
+    const response = await fetch(mediaUrl, {
+      headers: {
+        'Authorization': 'Basic ' + btoa(`${Deno.env.get('TWILIO_ACCOUNT_SID')}:${twilioAuthToken}`)
+      }
+    });
+    
+    if (!response.ok) {
+      console.error('[Photo] Failed to fetch media:', response.status);
+      return null;
+    }
+    
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const blob = await response.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    
+    // Generate unique filename
+    const timestamp = Date.now();
+    const ext = contentType.includes('png') ? 'png' : 'jpg';
+    const fileName = `${userId}/${timestamp}.${ext}`;
+    
+    // Upload to storage
+    const { error: uploadError } = await supabase.storage
+      .from('photo-proofs')
+      .upload(fileName, arrayBuffer, {
+        contentType,
+        upsert: false
+      });
+    
+    if (uploadError) {
+      console.error('[Photo] Upload error:', uploadError);
+      return null;
+    }
+    
+    // Save reference to database
+    const { error: dbError } = await supabase
+      .from('billie_photo_proofs')
+      .insert({
+        user_id: userId,
+        goal_id: goalId || null,
+        storage_path: fileName,
+      });
+    
+    if (dbError) {
+      console.error('[Photo] DB error:', dbError);
+    }
+    
+    console.log(`[Photo] Saved proof: ${fileName}`);
+    return fileName;
+  } catch (error) {
+    console.error('[Photo] Error handling photo:', error);
+    return null;
+  }
+}
+
 // Validate Twilio webhook signature
 function validateTwilioSignature(
   signature: string | null,
@@ -477,11 +636,20 @@ function getFallbackResponse(user: any, userMessage: string): string {
   return "yo text me what's going on\n\nor say 'check in' if u wanna update me on your goals";
 }
 
-function parseIncomingSMS(body: string): { from: string; message: string } {
+function parseIncomingSMS(body: string): { from: string; message: string; mediaUrls: string[]; numMedia: number } {
   const params = new URLSearchParams(body);
   const from = params.get('From') || '';
   const message = params.get('Body') || '';
-  return { from, message: message.trim() };
+  const numMedia = parseInt(params.get('NumMedia') || '0', 10);
+  
+  // Extract all media URLs
+  const mediaUrls: string[] = [];
+  for (let i = 0; i < numMedia; i++) {
+    const url = params.get(`MediaUrl${i}`);
+    if (url) mediaUrls.push(url);
+  }
+  
+  return { from, message: message.trim(), mediaUrls, numMedia };
 }
 
 function createTwiMLResponse(message: string): string {
@@ -642,8 +810,8 @@ serve(async (req) => {
     
     console.log('[Security] Valid Twilio signature');
 
-    const { from, message } = parseIncomingSMS(body);
-    console.log(`[SMS] Received message`);
+    const { from, message, mediaUrls, numMedia } = parseIncomingSMS(body);
+    console.log(`[SMS] Received message${numMedia > 0 ? ` with ${numMedia} media` : ''}`);
 
     if (!from) {
       return new Response('Missing phone number', { status: 400 });
@@ -656,8 +824,25 @@ serve(async (req) => {
     const conversationHistory = await getConversationHistory(user.id);
     console.log(`[SMS] User has ${conversationHistory.length} messages in history`);
 
-    // Save the incoming user message
-    await saveMessage(user.id, 'user', message);
+    // Handle photo proof if MMS received
+    let photoSaved = false;
+    if (mediaUrls.length > 0) {
+      const userGoals = await getUserGoals(user.id);
+      const firstGoalId = userGoals.length > 0 ? userGoals[0].id : undefined;
+      
+      for (const mediaUrl of mediaUrls) {
+        const savedPath = await handlePhotoProof(user.id, mediaUrl, firstGoalId);
+        if (savedPath) photoSaved = true;
+      }
+      
+      if (photoSaved) {
+        console.log('[SMS] Photo proof saved');
+      }
+    }
+
+    // Save the incoming user message (include note about photo if sent)
+    const messageToSave = photoSaved && !message ? '[sent photo proof]' : message;
+    await saveMessage(user.id, 'user', messageToSave);
 
     // Determine state transitions based on onboarding step
     let updates: Record<string, any> = {};
@@ -682,7 +867,14 @@ serve(async (req) => {
       if (looksLikeGoals(message)) {
         updates.goals = sanitizeInput(message, 1000);
         updates.onboarding_step = 3;
-        console.log('[SMS] Got goals, advancing to step 3');
+        
+        // Parse and save individual goals
+        const parsedGoals = parseNumberedGoals(message);
+        if (parsedGoals.length > 0) {
+          await saveUserGoals(user.id, parsedGoals);
+        }
+        
+        console.log(`[SMS] Got ${parsedGoals.length} goals, advancing to step 3`);
       } else {
         console.log('[SMS] Message does not look like goals, staying at step 2');
       }
@@ -706,11 +898,20 @@ serve(async (req) => {
         updates.awaiting_check_in = false;
         console.log('[SMS] Check-in response received');
         
-        // Track streak if positive response
-        if (isPositiveResponse(message)) {
+        // Track streak if positive response OR if they sent photo proof
+        if (isPositiveResponse(message) || photoSaved) {
           const streakUpdates = calculateStreakUpdates(user, true);
           Object.assign(updates, streakUpdates);
           console.log(`[SMS] Streak updated: current=${streakUpdates.current_streak || user.current_streak}, longest=${streakUpdates.longest_streak || user.longest_streak}`);
+          
+          // Also update goal-specific streak if photo proof sent
+          if (photoSaved) {
+            const userGoals = await getUserGoals(user.id);
+            if (userGoals.length > 0) {
+              const goal = userGoals[0];
+              await updateGoalStreak(goal.id, goal.current_streak + 1, goal.current_streak);
+            }
+          }
         }
       }
     }
