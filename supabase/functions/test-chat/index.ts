@@ -219,6 +219,107 @@ function looksLikeGoals(message: string): boolean {
   return true;
 }
 
+// Parse numbered goals from user message (e.g., "1. gym 2. read 3. meditate")
+function parseNumberedGoals(message: string): string[] {
+  const goals: string[] = [];
+  
+  // Match patterns like "1. goal" or "1) goal" or "1 goal" or just newline-separated
+  const patterns = [
+    /(?:^|\n)\s*\d+[.)]\s*(.+?)(?=(?:\n\s*\d+[.)]|\n*$))/gi,
+    /(?:^|\n)\s*[-•]\s*(.+?)(?=(?:\n\s*[-•]|\n*$))/gi,
+  ];
+  
+  for (const pattern of patterns) {
+    const matches = message.matchAll(pattern);
+    for (const match of matches) {
+      const goal = match[1]?.trim();
+      if (goal && goal.length > 2) {
+        goals.push(goal);
+      }
+    }
+    if (goals.length > 0) break;
+  }
+  
+  // If no numbered format found, try splitting by newlines
+  if (goals.length === 0) {
+    const lines = message.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+    if (lines.length > 1) {
+      goals.push(...lines);
+    } else if (lines.length === 1) {
+      // Single goal
+      goals.push(lines[0]);
+    }
+  }
+  
+  // Limit to 5 goals max
+  return goals.slice(0, 5);
+}
+
+// Save parsed goals to billie_goals table
+async function saveUserGoals(userId: string, goals: string[]): Promise<void> {
+  if (goals.length === 0) return;
+  
+  // Delete existing active goals first
+  await supabase
+    .from('billie_goals')
+    .update({ is_active: false })
+    .eq('user_id', userId);
+  
+  // Insert new goals
+  const goalsToInsert = goals.map((goal, index) => ({
+    user_id: userId,
+    goal_number: index + 1,
+    goal_text: sanitizeInput(goal, 200),
+    is_active: true,
+  }));
+  
+  const { error } = await supabase
+    .from('billie_goals')
+    .insert(goalsToInsert);
+  
+  if (error) {
+    console.error('[Goals] Error saving goals:', error);
+  } else {
+    console.log(`[Goals] Saved ${goals.length} goals for user`);
+  }
+}
+
+// Get user's active goals
+async function getUserGoals(userId: string): Promise<Array<{id: string, goal_number: number, goal_text: string, current_streak: number}>> {
+  const { data, error } = await supabase
+    .from('billie_goals')
+    .select('id, goal_number, goal_text, current_streak')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('goal_number', { ascending: true });
+  
+  if (error) {
+    console.error('[Goals] Error fetching goals:', error);
+    return [];
+  }
+  
+  return data || [];
+}
+
+// Update streak for a specific goal
+async function updateGoalStreak(goalId: string, currentStreak: number, longestStreak: number): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  
+  const updates: Record<string, any> = {
+    last_check_in_date: today,
+    current_streak: currentStreak,
+  };
+  
+  if (currentStreak > longestStreak) {
+    updates.longest_streak = currentStreak;
+  }
+  
+  await supabase
+    .from('billie_goals')
+    .update(updates)
+    .eq('id', goalId);
+}
+
 // Get FULL conversation history for a user - NO LIMIT
 async function getConversationHistory(userId: string): Promise<Array<{role: string, content: string, created_at: string}>> {
   const { data, error } = await supabase
@@ -716,7 +817,14 @@ serve(async (req) => {
       if (looksLikeGoals(message)) {
         updates.goals = sanitizeInput(message, 1000);
         updates.onboarding_step = 3;
-        console.log('[Test] Got goals, advancing to step 3');
+        
+        // Parse and save individual goals
+        const parsedGoals = parseNumberedGoals(message);
+        if (parsedGoals.length > 0) {
+          await saveUserGoals(user.id, parsedGoals);
+        }
+        
+        console.log(`[Test] Got ${parsedGoals.length} goals, advancing to step 3`);
       } else {
         console.log('[Test] Message does not look like goals, staying at step 2');
       }

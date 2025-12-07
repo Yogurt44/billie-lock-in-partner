@@ -14,6 +14,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      billie_goals: {
+        Row: {
+          created_at: string
+          current_streak: number
+          goal_number: number
+          goal_text: string
+          id: string
+          is_active: boolean
+          last_check_in_date: string | null
+          longest_streak: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_streak?: number
+          goal_number: number
+          goal_text: string
+          id?: string
+          is_active?: boolean
+          last_check_in_date?: string | null
+          longest_streak?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_streak?: number
+          goal_number?: number
+          goal_text?: string
+          id?: string
+          is_active?: boolean
+          last_check_in_date?: string | null
+          longest_streak?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billie_goals_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "billie_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       billie_messages: {
         Row: {
           content: string
@@ -39,6 +83,48 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "billie_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "billie_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billie_photo_proofs: {
+        Row: {
+          check_in_date: string
+          created_at: string
+          goal_id: string | null
+          id: string
+          storage_path: string
+          user_id: string
+        }
+        Insert: {
+          check_in_date?: string
+          created_at?: string
+          goal_id?: string | null
+          id?: string
+          storage_path: string
+          user_id: string
+        }
+        Update: {
+          check_in_date?: string
+          created_at?: string
+          goal_id?: string | null
+          id?: string
+          storage_path?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billie_photo_proofs_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "billie_goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billie_photo_proofs_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "billie_users"
