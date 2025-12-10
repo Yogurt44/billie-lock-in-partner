@@ -1,13 +1,8 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MessageSquare } from "lucide-react";
-
-const PHONE_NUMBER = "+18444890104";
-const SMS_BODY = "yo i needa lock in bro 😭";
+import { Apple, Smartphone } from "lucide-react";
 
 export const HeroSection = () => {
-  const smsLink = `sms:${PHONE_NUMBER}&body=${encodeURIComponent(SMS_BODY)}`;
-
   return (
     <section className="relative min-h-screen flex items-center justify-center hero-gradient overflow-hidden">
       {/* Icy background elements */}
@@ -32,7 +27,7 @@ export const HeroSection = () => {
             transition={{ duration: 0.5, delay: 0.1 }}
             className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-frost border border-ice/30 mb-6"
           >
-            <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Winter 2025</span>
+            <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Now Available</span>
           </motion.div>
 
           {/* Intro copy */}
@@ -42,7 +37,7 @@ export const HeroSection = () => {
             transition={{ duration: 0.5, delay: 0.15 }}
             className="text-lg sm:text-xl text-muted-foreground mb-4"
           >
-            This winter 2025, let's lock-in with BILLIE.
+            Meet your new accountability partner.
           </motion.p>
 
           {/* Main heading */}
@@ -62,10 +57,10 @@ export const HeroSection = () => {
             transition={{ duration: 0.6, delay: 0.3 }}
             className="text-xl sm:text-2xl text-muted-foreground font-medium mb-12 max-w-xl mx-auto"
           >
-            your accounta<span className="text-ice font-bold">BILLIE</span>ty partner — by text.
+            your accounta<span className="text-ice font-bold">BILLIE</span>ty partner — keeping you locked in, daily.
           </motion.p>
 
-          {/* CTA */}
+          {/* App Store CTAs */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -73,21 +68,27 @@ export const HeroSection = () => {
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
             <Button asChild variant="hero" size="xl" className="group">
-              <a href={smsLink}>
-                <MessageSquare className="mr-2 transition-transform group-hover:scale-110" />
-                Start Locking In
+              <a href="https://apps.apple.com/app/billie" target="_blank" rel="noopener noreferrer">
+                <Apple className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
+                Download on iOS
+              </a>
+            </Button>
+            <Button asChild variant="outline" size="xl" className="group border-ice/30 hover:bg-ice/10">
+              <a href="https://play.google.com/store/apps/details?id=app.billie" target="_blank" rel="noopener noreferrer">
+                <Smartphone className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
+                Get on Android
               </a>
             </Button>
           </motion.div>
 
-          {/* Social proof hint */}
+          {/* Value prop */}
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.6 }}
             className="mt-12 text-sm text-muted-foreground"
           >
-            no app needed. just vibes, delusion, and BILLIE holding u accountable 🔒
+            free to try • daily check-ins • streak tracking • no bs, just accountability 🔒
           </motion.p>
         </motion.div>
       </div>

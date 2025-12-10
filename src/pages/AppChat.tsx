@@ -5,6 +5,7 @@ import { Send, Settings, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import billieIcon from "@/assets/billie-icon.png";
 
 interface Message {
   role: "user" | "billie";
@@ -158,9 +159,11 @@ export default function AppChat() {
       <header className="bg-card/80 backdrop-blur-xl border-b border-border/30 sticky top-0 z-10 safe-area-top">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">B</span>
-            </div>
+            <img 
+              src={billieIcon} 
+              alt="BILLIE" 
+              className="w-10 h-10 rounded-full"
+            />
             <div>
               <h1 className="font-semibold text-base">BILLIE</h1>
               <p className="text-xs text-muted-foreground">your accountability partner</p>
