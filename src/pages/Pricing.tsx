@@ -73,6 +73,32 @@ export default function Pricing() {
     }
   };
 
+  // Show friendly message if no token
+  if (!token) {
+    return (
+      <div className="min-h-screen hero-gradient flex items-center justify-center">
+        <div className="max-w-md mx-auto px-4 text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 border border-accent/20 mb-6">
+            <Snowflake className="w-4 h-4 text-accent" />
+            <span className="text-sm font-medium text-foreground/80">Almost there!</span>
+          </div>
+          <h1 className="text-3xl font-bold text-foreground mb-4">
+            hey, you need to chat with BILLIE first 💬
+          </h1>
+          <p className="text-muted-foreground mb-6">
+            text BILLIE to get your personalized pricing link. we'll send you a special link after we get to know your goals!
+          </p>
+          <a 
+            href="/" 
+            className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-accent text-accent-foreground font-medium hover:bg-accent/90 transition-colors"
+          >
+            Go Back Home
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen hero-gradient">
       {/* Decorative elements */}
