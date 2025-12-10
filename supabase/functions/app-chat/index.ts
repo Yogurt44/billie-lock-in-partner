@@ -393,7 +393,13 @@ async function generateBillieResponse(userMessage: string, user: any, history: A
     }
 
     const data = await response.json();
-    const aiMessage = data.choices?.[0]?.message?.content;
+    let aiMessage = data.choices?.[0]?.message?.content;
+    
+    // Normalize: replace literal \n strings with actual newlines
+    if (aiMessage) {
+      aiMessage = aiMessage.replace(/\\n/g, '\n');
+    }
+    
     return aiMessage || getFallbackResponse(user, userMessage);
   } catch (error) {
     console.error('[AI] Error:', error);
