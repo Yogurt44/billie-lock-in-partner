@@ -22,6 +22,11 @@ function getDeviceId(): string {
   return deviceId;
 }
 
+// Random delay between 1-2 seconds to simulate real texting
+function getRandomDelay(): number {
+  return 1000 + Math.random() * 1000;
+}
+
 export default function AppChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -49,7 +54,6 @@ export default function AppChat() {
   // Auto-start conversation if new user
   useEffect(() => {
     if (!hasStarted && messages.length === 0) {
-      // Small delay to let the UI load, then BILLIE initiates
       const timer = setTimeout(() => {
         startConversation();
       }, 500);
@@ -59,16 +63,40 @@ export default function AppChat() {
 
   const requestPushPermission = async () => {
     try {
-      // Check if we're in a Capacitor environment
       if ('Notification' in window) {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
           console.log('[Push] Permission granted');
-          // In real Capacitor app, we'd use PushNotifications.register() here
         }
       }
     } catch (error) {
       console.log('[Push] Not available:', error);
+    }
+  };
+
+  // Add BILLIE messages one at a time with delays
+  const addBillieMessagesWithDelay = async (response: string, paymentUrl?: string) => {
+    const bubbles = response.split("\n\n").filter(b => b.trim());
+    
+    for (let i = 0; i < bubbles.length; i++) {
+      // Show typing indicator before each message (except first, which already has it)
+      if (i > 0) {
+        setIsLoading(true);
+        await new Promise(resolve => setTimeout(resolve, getRandomDelay()));
+      }
+      
+      setMessages(prev => [...prev, { role: "billie", content: bubbles[i] }]);
+      setIsLoading(false);
+      
+      // Small pause between messages
+      if (i < bubbles.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+    
+    // Handle payment redirect after all messages
+    if (paymentUrl) {
+      window.open(paymentUrl, '_blank');
     }
   };
 
@@ -82,7 +110,19 @@ export default function AppChat() {
       if (error) throw error;
 
       if (data.messages && data.messages.length > 0) {
-        setMessages(data.messages);
+        // For loaded messages, split BILLIE messages into individual bubbles
+        const expandedMessages: Message[] = [];
+        for (const msg of data.messages) {
+          if (msg.role === "billie") {
+            const bubbles = msg.content.split("\n\n").filter((b: string) => b.trim());
+            bubbles.forEach((bubble: string) => {
+              expandedMessages.push({ role: "billie", content: bubble });
+            });
+          } else {
+            expandedMessages.push(msg);
+          }
+        }
+        setMessages(expandedMessages);
         setHasStarted(true);
       }
     } catch (error) {
@@ -104,13 +144,12 @@ export default function AppChat() {
       if (error) throw error;
 
       if (data.response) {
-        setMessages([{ role: "billie", content: data.response }]);
+        await addBillieMessagesWithDelay(data.response);
       }
     } catch (error) {
       console.error("Error starting conversation:", error);
       toast.error("Couldn't connect to BILLIE. Try again.");
       setHasStarted(false);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -134,28 +173,23 @@ export default function AppChat() {
 
       if (data.error) {
         toast.error(data.error);
+        setIsLoading(false);
         return;
       }
 
-      setMessages((prev) => [...prev, { role: "billie", content: data.response }]);
-
-      // Handle payment redirect
-      if (data.paymentUrl) {
-        // Open Stripe checkout in browser
-        window.open(data.paymentUrl, '_blank');
-      }
+      await addBillieMessagesWithDelay(data.response, data.paymentUrl);
     } catch (error) {
       console.error("Error:", error);
       toast.error("Failed to send. Try again.");
-    } finally {
       setIsLoading(false);
+    } finally {
       inputRef.current?.focus();
     }
   };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header - Minimal iMessage style */}
+      {/* Header */}
       <header className="bg-card/80 backdrop-blur-xl border-b border-border/30 sticky top-0 z-10 safe-area-top">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -183,56 +217,44 @@ export default function AppChat() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-4 py-4 space-y-2 max-w-3xl mx-auto">
-          {messages.flatMap((msg, i) => {
-            // Split BILLIE's messages into separate bubbles
-            const bubbles = msg.role === "billie" 
-              ? msg.content.split("\n\n").filter(b => b.trim())
-              : [msg.content];
+          {messages.map((msg, i) => {
+            const urlMatch = msg.content.match(/(https?:\/\/[^\s]+)/);
             
-            return bubbles.map((bubble, j) => {
-              const urlMatch = bubble.match(/(https?:\/\/[^\s]+)/);
-              
-              return (
+            return (
+              <div
+                key={i}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}
+              >
                 <div
-                  key={`${i}-${j}`}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                  style={{ 
-                    animationDelay: msg.role === "billie" ? `${j * 100}ms` : "0ms",
-                    animation: "fadeIn 0.2s ease-out forwards",
-                    opacity: 0,
-                  }}
+                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground rounded-br-md"
+                      : "bg-muted/80 rounded-bl-md"
+                  }`}
                 >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-br-md"
-                        : "bg-muted/80 rounded-bl-md"
-                    }`}
-                  >
-                    {urlMatch ? (
-                      <p>
-                        {bubble.substring(0, bubble.indexOf(urlMatch[1]))}
-                        <a
-                          href={urlMatch[1]}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:underline inline-flex items-center gap-1"
-                        >
-                          tap here <ExternalLink className="h-3 w-3" />
-                        </a>
-                        {bubble.substring(bubble.indexOf(urlMatch[1]) + urlMatch[1].length)}
-                      </p>
-                    ) : (
-                      <p>{bubble}</p>
-                    )}
-                  </div>
+                  {urlMatch ? (
+                    <p>
+                      {msg.content.substring(0, msg.content.indexOf(urlMatch[1]))}
+                      <a
+                        href={urlMatch[1]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:underline inline-flex items-center gap-1"
+                      >
+                        tap here <ExternalLink className="h-3 w-3" />
+                      </a>
+                      {msg.content.substring(msg.content.indexOf(urlMatch[1]) + urlMatch[1].length)}
+                    </p>
+                  ) : (
+                    <p>{msg.content}</p>
+                  )}
                 </div>
-              );
-            });
+              </div>
+            );
           })}
 
           {isLoading && (
-            <div className="flex justify-start">
+            <div className="flex justify-start animate-fade-in">
               <div className="bg-muted/80 rounded-2xl rounded-bl-md px-4 py-3">
                 <div className="flex gap-1.5">
                   <span
@@ -256,7 +278,7 @@ export default function AppChat() {
         </div>
       </div>
 
-      {/* Input - iMessage style */}
+      {/* Input */}
       <div className="bg-card/80 backdrop-blur-xl border-t border-border/30 safe-area-bottom">
         <form onSubmit={sendMessage} className="px-4 py-3 max-w-3xl mx-auto">
           <div className="flex gap-2 items-end">
