@@ -12,6 +12,18 @@ serve(async (req) => {
   }
 
   try {
+    // Validate cron secret to prevent unauthorized access
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const providedSecret = req.headers.get("x-cron-secret");
+    
+    if (!cronSecret || providedSecret !== cronSecret) {
+      console.error("[CRON] Unauthorized: Invalid or missing cron secret");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
+    }
+
     console.log("[CRON] Daily check-in reminder starting...");
 
     const supabase = createClient(
