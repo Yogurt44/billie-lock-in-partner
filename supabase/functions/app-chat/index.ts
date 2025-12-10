@@ -415,7 +415,7 @@ async function updateUser(phone: string, updates: Record<string, any>) {
 }
 
 function getPricingLink(userId: string, phone: string): string {
-  const baseUrl = "https://fdad419e-585e-47a5-a821-647690fccb2e.lovableproject.com";
+  const baseUrl = "https://trybillie.com";
   const tokenSecret = Deno.env.get('TWILIO_AUTH_TOKEN') || 'app-secret';
   
   const expiresAt = Date.now() + (24 * 60 * 60 * 1000);
