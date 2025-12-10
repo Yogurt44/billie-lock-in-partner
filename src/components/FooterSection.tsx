@@ -1,13 +1,9 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MessageSquare } from "lucide-react";
-
-const PHONE_NUMBER = "+18444890104";
-const SMS_BODY = "yo i needa lock in bro 😭";
+import { Apple, Smartphone } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export const FooterSection = () => {
-  const smsLink = `sms:${PHONE_NUMBER}&body=${encodeURIComponent(SMS_BODY)}`;
-
   return (
     <footer className="py-24 sm:py-32 bg-midnight text-primary-foreground relative overflow-hidden">
       {/* Icy background elements */}
@@ -26,21 +22,33 @@ export const FooterSection = () => {
           className="max-w-2xl mx-auto"
         >
           <h2 className="text-4xl sm:text-5xl font-bold mb-4 text-white">
-            stop scrolling. text BILLIE.
+            stop scrolling. download BILLIE.
           </h2>
           <p className="text-lg text-white/80 mb-10">
             no more "i'll start monday" bs. this is ur sign. let's lock in.
           </p>
 
-          <Button asChild variant="ice" size="xl" className="group">
-            <a href={smsLink}>
-              <MessageSquare className="mr-2 transition-transform group-hover:scale-110" />
-              Start Locking In
-            </a>
-          </Button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Button asChild variant="ice" size="xl" className="group">
+              <a href="https://apps.apple.com/app/billie" target="_blank" rel="noopener noreferrer">
+                <Apple className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
+                Download on iOS
+              </a>
+            </Button>
+            <Button asChild variant="outline" size="xl" className="group border-white/20 text-white hover:bg-white/10">
+              <a href="https://play.google.com/store/apps/details?id=app.billie" target="_blank" rel="noopener noreferrer">
+                <Smartphone className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
+                Get on Android
+              </a>
+            </Button>
+          </div>
 
           {/* Footer links */}
           <div className="mt-16 pt-8 border-t border-primary-foreground/10">
+            <div className="flex flex-wrap justify-center gap-6 mb-4 text-sm text-white/60">
+              <Link to="/terms" className="hover:text-white transition-colors">Terms</Link>
+              <Link to="/privacy" className="hover:text-white transition-colors">Privacy</Link>
+            </div>
             <p className="text-sm text-white/60">
               © 2025 BILLIE. built for ppl who are done making excuses.
             </p>

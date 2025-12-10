@@ -2,8 +2,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { Capacitor } from "@capacitor/core";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PaymentSuccess from "./pages/PaymentSuccess";
@@ -17,6 +18,9 @@ import AppSettings from "./pages/AppSettings";
 
 const queryClient = new QueryClient();
 
+// Detect if running inside native Capacitor app
+const isNativeApp = Capacitor.isNativePlatform();
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
@@ -25,7 +29,8 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
+            {/* Native app skips landing page, goes directly to chat */}
+            <Route path="/" element={isNativeApp ? <Navigate to="/app" replace /> : <Index />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/payment-success" element={<PaymentSuccess />} />
             <Route path="/terms" element={<Terms />} />
