@@ -12,6 +12,8 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import SMSConsent from "./pages/SMSConsent";
 import TestChat from "./pages/TestChat";
+import AppChat from "./pages/AppChat";
+import AppSettings from "./pages/AppSettings";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +32,8 @@ const App = () => (
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/sms-consent" element={<SMSConsent />} />
             <Route path="/test" element={<TestChat />} />
+            <Route path="/app" element={<AppChat />} />
+            <Route path="/app/settings" element={<AppSettings />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

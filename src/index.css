@@ -4,6 +4,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Safe area for mobile notch/home indicator */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 @layer base {
   :root {
     /* Icy winter palette - cold, crisp, glacial */
