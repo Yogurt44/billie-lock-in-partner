@@ -561,6 +561,21 @@ serve(async (req) => {
       });
     }
 
+    // Handle save-push-token action
+    if (action === 'save-push-token') {
+      const { pushToken: token } = body;
+      if (token) {
+        await supabase
+          .from('billie_users')
+          .update({ push_token: token })
+          .eq('phone', phone);
+        console.log(`[Push] Saved token for device ${deviceId.substring(0, 10)}...`);
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Handle reset action
     if (action === 'reset') {
       const { data: user } = await supabase
