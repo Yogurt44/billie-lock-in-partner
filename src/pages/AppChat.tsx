@@ -24,6 +24,21 @@ function getDeviceId(): string {
   return deviceId;
 }
 
+// Get stored device token (secure auth token from server)
+function getDeviceToken(): string | null {
+  return localStorage.getItem("billie-device-token");
+}
+
+// Store device token from server
+function setDeviceToken(token: string): void {
+  localStorage.setItem("billie-device-token", token);
+}
+
+// Clear device token (for reset)
+function clearDeviceToken(): void {
+  localStorage.removeItem("billie-device-token");
+}
+
 // Random delay between 1-2 seconds to simulate real texting
 function getRandomDelay(): number {
   return 1000 + Math.random() * 1000;
@@ -138,6 +153,11 @@ export default function AppChat() {
 
       if (error) throw error;
 
+      // Store the device token for future authenticated requests
+      if (data.deviceToken) {
+        setDeviceToken(data.deviceToken);
+      }
+
       if (data.response) {
         await addBillieMessagesWithDelay(data.response);
       }
@@ -163,11 +183,22 @@ export default function AppChat() {
     setIsLoading(true);
 
     try {
+      const deviceToken = getDeviceToken();
+      
       const { data, error } = await supabase.functions.invoke("app-chat", {
-        body: { message: userMessage, deviceId, pushToken },
+        body: { message: userMessage, deviceId, deviceToken, pushToken },
       });
 
       if (error) throw error;
+
+      // Handle token errors - need to re-authenticate
+      if (data.code === 'TOKEN_REQUIRED' || data.code === 'INVALID_TOKEN') {
+        // Clear old token and restart conversation to get new token
+        clearDeviceToken();
+        toast.error("Session expired. Please restart the conversation.");
+        setIsLoading(false);
+        return;
+      }
 
       if (data.error) {
         toast.error(data.error);

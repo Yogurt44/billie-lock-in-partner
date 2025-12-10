@@ -12,6 +12,9 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
+// Secret for signing device tokens - use existing secret
+const TOKEN_SECRET = Deno.env.get('TWILIO_AUTH_TOKEN') || 'app-device-secret-key-2024';
+
 // BILLIE's complete personality - SAME AS SMS/TEST
 const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who texts like a real friend. You're the friend who actually keeps it real - blunt, funny, caring, but never fluffy or corporate.
 
@@ -137,6 +140,57 @@ Don't rush through onboarding. Have a real conversation:
 8. Create a personalized approach based on everything you learned
 
 Remember: You're BILLIE. Keep it real, keep it short, keep it helpful. Be the friend they need, not the coach they expect. USE THE CONVERSATION HISTORY.`;
+
+// ============ SECURE DEVICE TOKEN SYSTEM ============
+
+// Generate a secure device token (called when creating new user)
+function generateDeviceToken(deviceId: string): string {
+  const timestamp = Date.now();
+  const payload = `${deviceId}:${timestamp}`;
+  
+  const hmac = createHmac("sha256", TOKEN_SECRET);
+  hmac.update(payload);
+  const signature = hmac.digest("hex");
+  
+  // Return base64 encoded token: deviceId:timestamp:signature
+  return btoa(`${payload}:${signature}`);
+}
+
+// Verify a device token is valid
+function verifyDeviceToken(token: string, deviceId: string): { valid: boolean; error?: string } {
+  try {
+    const decoded = atob(token);
+    const parts = decoded.split(':');
+    
+    if (parts.length !== 3) {
+      return { valid: false, error: 'Invalid token format' };
+    }
+    
+    const [tokenDeviceId, timestamp, signature] = parts;
+    
+    // Verify device ID matches
+    if (tokenDeviceId !== deviceId) {
+      return { valid: false, error: 'Device ID mismatch' };
+    }
+    
+    // Verify signature
+    const payload = `${tokenDeviceId}:${timestamp}`;
+    const hmac = createHmac("sha256", TOKEN_SECRET);
+    hmac.update(payload);
+    const expectedSignature = hmac.digest("hex");
+    
+    if (signature !== expectedSignature) {
+      return { valid: false, error: 'Invalid signature' };
+    }
+    
+    // Token is valid (no expiration for device tokens - they're permanent per device)
+    return { valid: true };
+  } catch {
+    return { valid: false, error: 'Token decode failed' };
+  }
+}
+
+// ============ END SECURE TOKEN SYSTEM ============
 
 // Security helpers
 function sanitizeInput(input: string, maxLength: number = 500): string {
@@ -486,7 +540,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, message, deviceId, pushToken, settings } = body;
+    const { action, message, deviceId, deviceToken, pushToken, settings } = body;
 
     if (!deviceId) {
       return new Response(JSON.stringify({ error: 'Device ID required' }), {
@@ -519,26 +573,55 @@ serve(async (req) => {
       });
     }
 
-    // Handle start action - BILLIE initiates conversation
+    // Handle start action - BILLIE initiates conversation (creates new user + token)
     if (action === 'start') {
       const user = await getOrCreateUser(deviceId, pushToken);
       const history = await getConversationHistory(user.id);
 
-      // If already has history, don't start again
+      // If already has history, don't start again but return token for existing user
       if (history.length > 0) {
-        return new Response(JSON.stringify({ response: null }), {
+        // Generate new token for existing user (allows them to continue)
+        const newToken = generateDeviceToken(deviceId);
+        return new Response(JSON.stringify({ response: null, deviceToken: newToken }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      // Generate secure device token for new user
+      const newDeviceToken = generateDeviceToken(deviceId);
 
       // Generate BILLIE's opening message
       const openingMessage = await generateBillieResponse("", user, []);
       await saveMessage(user.id, 'billie', openingMessage);
 
-      return new Response(JSON.stringify({ response: openingMessage }), {
+      return new Response(JSON.stringify({ 
+        response: openingMessage,
+        deviceToken: newDeviceToken 
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // ============ VERIFY TOKEN FOR SENSITIVE OPERATIONS ============
+    // All operations below require a valid device token
+    
+    if (!deviceToken) {
+      return new Response(JSON.stringify({ error: 'Authentication required', code: 'TOKEN_REQUIRED' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const tokenVerification = verifyDeviceToken(deviceToken, deviceId);
+    if (!tokenVerification.valid) {
+      console.log(`[Auth] Token verification failed: ${tokenVerification.error}`);
+      return new Response(JSON.stringify({ error: 'Invalid authentication', code: 'INVALID_TOKEN' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ============ END TOKEN VERIFICATION ============
 
     // Handle get-settings action
     if (action === 'get-settings') {
@@ -569,7 +652,7 @@ serve(async (req) => {
           .from('billie_users')
           .update({ push_token: token })
           .eq('phone', phone);
-        console.log(`[Push] Saved token for device ${deviceId.substring(0, 10)}...`);
+        console.log(`[Push] Saved token for device`);
       }
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -603,7 +686,7 @@ serve(async (req) => {
       });
     }
 
-    console.log(`[App] Processing message from ${deviceId.substring(0, 10)}...`);
+    console.log(`[App] Processing authenticated message`);
 
     const user = await getOrCreateUser(deviceId, pushToken);
     const conversationHistory = await getConversationHistory(user.id);
