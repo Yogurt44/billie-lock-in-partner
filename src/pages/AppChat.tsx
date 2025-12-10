@@ -179,50 +179,54 @@ export default function AppChat() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
-        <div className="px-4 py-4 space-y-3 max-w-3xl mx-auto">
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-br-md"
-                    : "bg-muted/80 rounded-bl-md"
-                }`}
-              >
-                {msg.content.split("\n\n").map((bubble, j) => {
-                  // Check if this bubble contains a URL
-                  const urlMatch = bubble.match(/(https?:\/\/[^\s]+)/);
-                  if (urlMatch) {
-                    const url = urlMatch[1];
-                    const textBefore = bubble.substring(0, bubble.indexOf(url));
-                    const textAfter = bubble.substring(bubble.indexOf(url) + url.length);
-                    return (
-                      <p key={j} className={j > 0 ? "mt-2.5" : ""}>
-                        {textBefore}
+        <div className="px-4 py-4 space-y-2 max-w-3xl mx-auto">
+          {messages.flatMap((msg, i) => {
+            // Split BILLIE's messages into separate bubbles
+            const bubbles = msg.role === "billie" 
+              ? msg.content.split("\n\n").filter(b => b.trim())
+              : [msg.content];
+            
+            return bubbles.map((bubble, j) => {
+              const urlMatch = bubble.match(/(https?:\/\/[^\s]+)/);
+              
+              return (
+                <div
+                  key={`${i}-${j}`}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  style={{ 
+                    animationDelay: msg.role === "billie" ? `${j * 100}ms` : "0ms",
+                    animation: "fadeIn 0.2s ease-out forwards",
+                    opacity: 0,
+                  }}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground rounded-br-md"
+                        : "bg-muted/80 rounded-bl-md"
+                    }`}
+                  >
+                    {urlMatch ? (
+                      <p>
+                        {bubble.substring(0, bubble.indexOf(urlMatch[1]))}
                         <a
-                          href={url}
+                          href={urlMatch[1]}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-400 hover:underline inline-flex items-center gap-1"
                         >
                           tap here <ExternalLink className="h-3 w-3" />
                         </a>
-                        {textAfter}
+                        {bubble.substring(bubble.indexOf(urlMatch[1]) + urlMatch[1].length)}
                       </p>
-                    );
-                  }
-                  return (
-                    <p key={j} className={j > 0 ? "mt-2.5" : ""}>
-                      {bubble}
-                    </p>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+                    ) : (
+                      <p>{bubble}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            });
+          })}
 
           {isLoading && (
             <div className="flex justify-start">
