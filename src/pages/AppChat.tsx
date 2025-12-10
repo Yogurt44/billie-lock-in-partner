@@ -6,6 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import billieIcon from "@/assets/billie-icon.png";
+import { useMessageSound } from "@/hooks/useMessageSound";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 interface Message {
   role: "user" | "billie";
@@ -32,10 +34,16 @@ export default function AppChat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
-  const [pushToken, setPushToken] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  
+  // Sound effects and haptic feedback
+  const { playMessageReceived, playSentSound } = useMessageSound();
+  
+  // Push notifications
+  const deviceId = getDeviceId();
+  const { token: pushToken } = usePushNotifications(deviceId);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -48,7 +56,6 @@ export default function AppChat() {
   // Load previous messages on mount
   useEffect(() => {
     loadConversation();
-    requestPushPermission();
   }, []);
 
   // Auto-start conversation if new user
@@ -61,20 +68,7 @@ export default function AppChat() {
     }
   }, [hasStarted, messages.length]);
 
-  const requestPushPermission = async () => {
-    try {
-      if ('Notification' in window) {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          console.log('[Push] Permission granted');
-        }
-      }
-    } catch (error) {
-      console.log('[Push] Not available:', error);
-    }
-  };
-
-  // Add BILLIE messages one at a time with delays
+  // Add BILLIE messages one at a time with delays, sound, and haptics
   const addBillieMessagesWithDelay = async (response: string, paymentUrl?: string) => {
     const bubbles = response.split("\n\n").filter(b => b.trim());
     
@@ -84,6 +78,9 @@ export default function AppChat() {
         setIsLoading(true);
         await new Promise(resolve => setTimeout(resolve, getRandomDelay()));
       }
+      
+      // Play sound and haptic for each message
+      playMessageReceived();
       
       setMessages(prev => [...prev, { role: "billie", content: bubbles[i] }]);
       setIsLoading(false);
@@ -102,7 +99,6 @@ export default function AppChat() {
 
   const loadConversation = async () => {
     try {
-      const deviceId = getDeviceId();
       const { data, error } = await supabase.functions.invoke("app-chat", {
         body: { action: "load", deviceId },
       });
@@ -136,7 +132,6 @@ export default function AppChat() {
     setIsLoading(true);
 
     try {
-      const deviceId = getDeviceId();
       const { data, error } = await supabase.functions.invoke("app-chat", {
         body: { action: "start", deviceId, pushToken },
       });
@@ -160,11 +155,14 @@ export default function AppChat() {
 
     const userMessage = input.trim();
     setInput("");
+    
+    // Play sent sound
+    playSentSound();
+    
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
     try {
-      const deviceId = getDeviceId();
       const { data, error } = await supabase.functions.invoke("app-chat", {
         body: { message: userMessage, deviceId, pushToken },
       });
