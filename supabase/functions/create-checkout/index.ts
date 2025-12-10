@@ -121,7 +121,7 @@ serve(async (req) => {
     }
 
     const priceId = plan === "annual" ? PRICES.annual : PRICES.monthly;
-    const origin = req.headers.get("origin") || "https://vqfcnpmvzvukdfoitzue.lovableproject.com";
+    const origin = req.headers.get("origin") || "https://trybillie.com";
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
