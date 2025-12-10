@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.test-chat]
 verify_jwt = false
+
+[functions.app-chat]
+verify_jwt = false

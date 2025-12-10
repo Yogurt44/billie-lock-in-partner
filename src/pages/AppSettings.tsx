@@ -1,0 +1,234 @@
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft, Bell, Clock, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+// Generate or get device ID
+function getDeviceId(): string {
+  let deviceId = localStorage.getItem("billie-device-id");
+  if (!deviceId) {
+    deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    localStorage.setItem("billie-device-id", deviceId);
+  }
+  return deviceId;
+}
+
+const timezones = [
+  { value: "America/New_York", label: "Eastern Time (ET)" },
+  { value: "America/Chicago", label: "Central Time (CT)" },
+  { value: "America/Denver", label: "Mountain Time (MT)" },
+  { value: "America/Los_Angeles", label: "Pacific Time (PT)" },
+  { value: "America/Phoenix", label: "Arizona (MST)" },
+  { value: "Pacific/Honolulu", label: "Hawaii (HST)" },
+  { value: "America/Anchorage", label: "Alaska (AKST)" },
+];
+
+export default function AppSettings() {
+  const navigate = useNavigate();
+  const [checkInTime, setCheckInTime] = useState("09:00");
+  const [timezone, setTimezone] = useState("America/New_York");
+  const [isLoading, setIsLoading] = useState(false);
+  const [userInfo, setUserInfo] = useState<{
+    name: string | null;
+    subscription_status: string | null;
+    current_streak: number;
+    longest_streak: number;
+  } | null>(null);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const deviceId = getDeviceId();
+      const { data, error } = await supabase.functions.invoke("app-chat", {
+        body: { action: "get-settings", deviceId },
+      });
+
+      if (error) throw error;
+
+      if (data.settings) {
+        setCheckInTime(data.settings.preferred_check_in_time || "09:00");
+        setTimezone(data.settings.timezone || "America/New_York");
+        setUserInfo({
+          name: data.settings.name,
+          subscription_status: data.settings.subscription_status,
+          current_streak: data.settings.current_streak || 0,
+          longest_streak: data.settings.longest_streak || 0,
+        });
+      }
+    } catch (error) {
+      console.log("Error loading settings:", error);
+    }
+  };
+
+  const saveSettings = async () => {
+    setIsLoading(true);
+    try {
+      const deviceId = getDeviceId();
+      const { error } = await supabase.functions.invoke("app-chat", {
+        body: {
+          action: "save-settings",
+          deviceId,
+          settings: {
+            preferred_check_in_time: checkInTime,
+            timezone,
+          },
+        },
+      });
+
+      if (error) throw error;
+      toast.success("Settings saved!");
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      toast.error("Failed to save settings");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetConversation = async () => {
+    if (!confirm("This will delete all your conversation history. Are you sure?")) {
+      return;
+    }
+
+    try {
+      const deviceId = getDeviceId();
+      await supabase.functions.invoke("app-chat", {
+        body: { action: "reset", deviceId },
+      });
+      localStorage.removeItem("billie-device-id");
+      toast.success("Conversation reset! Starting fresh.");
+      navigate("/app");
+    } catch (error) {
+      console.error("Error resetting:", error);
+      toast.error("Failed to reset");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="bg-card/80 backdrop-blur-xl border-b border-border/30 sticky top-0 z-10 safe-area-top">
+        <div className="px-4 py-3 flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/app")}
+            className="h-8 w-8"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="font-semibold text-lg">Settings</h1>
+        </div>
+      </header>
+
+      <div className="px-4 py-6 max-w-lg mx-auto space-y-8">
+        {/* User Info */}
+        {userInfo && (
+          <div className="bg-card rounded-xl p-4 border border-border/50">
+            <h2 className="font-medium mb-3">Your Stats</h2>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-muted-foreground">Name</p>
+                <p className="font-medium">{userInfo.name || "Not set"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Status</p>
+                <p className="font-medium">
+                  {userInfo.subscription_status === "active" ? (
+                    <span className="text-green-500">🟢 Subscribed</span>
+                  ) : (
+                    <span className="text-muted-foreground">Free</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Current Streak</p>
+                <p className="font-medium text-orange-400">🔥 {userInfo.current_streak}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Best Streak</p>
+                <p className="font-medium">{userInfo.longest_streak}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Check-in Time */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <Label>Daily Check-in Time</Label>
+          </div>
+          <Input
+            type="time"
+            value={checkInTime}
+            onChange={(e) => setCheckInTime(e.target.value)}
+            className="w-full"
+          />
+          <p className="text-xs text-muted-foreground">
+            BILLIE will send you a notification at this time every day
+          </p>
+        </div>
+
+        {/* Timezone */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            <Label>Timezone</Label>
+          </div>
+          <Select value={timezone} onValueChange={setTimezone}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select timezone" />
+            </SelectTrigger>
+            <SelectContent>
+              {timezones.map((tz) => (
+                <SelectItem key={tz.value} value={tz.value}>
+                  {tz.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Save Button */}
+        <Button
+          onClick={saveSettings}
+          disabled={isLoading}
+          className="w-full"
+        >
+          {isLoading ? "Saving..." : "Save Settings"}
+        </Button>
+
+        {/* Danger Zone */}
+        <div className="pt-8 border-t border-border/50">
+          <h3 className="text-sm font-medium text-destructive mb-3">Danger Zone</h3>
+          <Button
+            variant="outline"
+            onClick={resetConversation}
+            className="w-full text-destructive border-destructive/50 hover:bg-destructive/10"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Reset All Data
+          </Button>
+          <p className="text-xs text-muted-foreground mt-2">
+            This will delete your conversation history and start fresh
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
