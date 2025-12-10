@@ -701,8 +701,10 @@ serve(async (req) => {
         updates.onboarding_step = 1;
       }
     } else if (user.onboarding_step === 1) {
+      // They told us their age
       updates.onboarding_step = 2;
     } else if (user.onboarding_step === 2) {
+      // They shared their goals/situation
       if (looksLikeGoals(message)) {
         updates.goals = sanitizeInput(message, 1000);
         updates.onboarding_step = 3;
@@ -712,14 +714,34 @@ serve(async (req) => {
         }
       }
     } else if (user.onboarding_step === 3) {
+      // They answered follow-up questions about blockers - continue digging
       updates.onboarding_step = 4;
     } else if (user.onboarding_step === 4) {
+      // They shared more about their situation - ask for timezone
       updates.onboarding_step = 5;
-      justCompletedOnboarding = true;
+    } else if (user.onboarding_step === 5) {
+      // Check if they gave timezone info
+      const timezonePatterns = /\b(pst|est|cst|mst|pt|et|ct|mt|pacific|eastern|central|mountain|gmt|utc|timezone|time zone|\d{1,2}\s*(am|pm)|morning|afternoon|evening)\b/i;
+      if (timezonePatterns.test(normalizedMessage)) {
+        // Try to extract timezone
+        const tzMatch = normalizedMessage.match(/(pst|pacific)/i) ? 'PST' :
+                        normalizedMessage.match(/(est|eastern)/i) ? 'EST' :
+                        normalizedMessage.match(/(cst|central)/i) ? 'CST' :
+                        normalizedMessage.match(/(mst|mountain)/i) ? 'MST' : null;
+        if (tzMatch) updates.timezone = tzMatch;
+        updates.onboarding_step = 6;
+      }
+    } else if (user.onboarding_step === 6) {
+      // They've seen the personalized plan - check if they agreed
+      const agreementWords = ['yes', 'yeah', 'yep', 'sounds good', 'perfect', 'bet', 'fire', 'love it', 'let\'s do it', 'down', 'i\'m in', 'that works'];
+      if (agreementWords.some(w => normalizedMessage.includes(w))) {
+        updates.onboarding_step = 7;
+        justCompletedOnboarding = true;
+      }
     }
 
-    // Handle check-in flow
-    if (user.onboarding_step >= 5) {
+    // Handle check-in flow (only after onboarding complete)
+    if (user.onboarding_step >= 7) {
       if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
         updates.awaiting_check_in = true;
       } else if (user.awaiting_check_in) {
