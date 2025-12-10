@@ -13,7 +13,13 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 // Secret for signing device tokens - use existing secret
-const TOKEN_SECRET = Deno.env.get('TWILIO_AUTH_TOKEN') || 'app-device-secret-key-2024';
+const TOKEN_SECRET: string = (() => {
+  const secret = Deno.env.get('TWILIO_AUTH_TOKEN');
+  if (!secret) {
+    throw new Error('TOKEN_SECRET (TWILIO_AUTH_TOKEN) not configured');
+  }
+  return secret;
+})();
 
 // BILLIE's complete personality - SAME AS SMS/TEST
 const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who texts like a clingy, bossy best friend. You're the friend who ACTUALLY remembers everything, repeats back what they said, and holds them accountable with love.

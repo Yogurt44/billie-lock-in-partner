@@ -17,7 +17,11 @@ const PRICES = {
 // Verify HMAC-signed token
 function verifyToken(token: string): { userId: string; phone: string; valid: boolean } {
   try {
-    const tokenSecret = Deno.env.get('TWILIO_AUTH_TOKEN') || 'fallback-secret';
+    const tokenSecret = Deno.env.get('TWILIO_AUTH_TOKEN');
+    if (!tokenSecret) {
+      console.error('[Checkout] TOKEN_SECRET not configured');
+      return { userId: '', phone: '', valid: false };
+    }
     const decoded = atob(token);
     const parts = decoded.split(':');
     
