@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Bell, Clock, Trash2 } from "lucide-react";
+import { ArrowLeft, Bell, Clock, Trash2, Sun, Moon, Monitor } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useTheme } from "next-themes";
 import {
   Select,
   SelectContent,
@@ -36,6 +37,7 @@ const timezones = [
 
 export default function AppSettings() {
   const navigate = useNavigate();
+  const { theme, setTheme } = useTheme();
   const [checkInTime, setCheckInTime] = useState("09:00");
   const [timezone, setTimezone] = useState("America/New_York");
   const [isLoading, setIsLoading] = useState(false);
@@ -166,6 +168,43 @@ export default function AppSettings() {
             </div>
           </div>
         )}
+
+        {/* Appearance */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Sun className="h-4 w-4 text-muted-foreground" />
+            <Label>Appearance</Label>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              variant={theme === "light" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setTheme("light")}
+              className="flex items-center gap-2"
+            >
+              <Sun className="h-4 w-4" />
+              Light
+            </Button>
+            <Button
+              variant={theme === "dark" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setTheme("dark")}
+              className="flex items-center gap-2"
+            >
+              <Moon className="h-4 w-4" />
+              Dark
+            </Button>
+            <Button
+              variant={theme === "system" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setTheme("system")}
+              className="flex items-center gap-2"
+            >
+              <Monitor className="h-4 w-4" />
+              Auto
+            </Button>
+          </div>
+        </div>
 
         {/* Check-in Time */}
         <div className="space-y-3">
