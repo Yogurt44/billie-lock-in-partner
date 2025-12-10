@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.app-chat]
 verify_jwt = false
+
+[functions.daily-checkin-cron]
+verify_jwt = false

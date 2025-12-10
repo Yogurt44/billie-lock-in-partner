@@ -145,6 +145,7 @@ export type Database = {
           onboarding_step: number
           phone: string
           preferred_check_in_time: string | null
+          push_token: string | null
           stripe_customer_id: string | null
           subscription_end: string | null
           subscription_status: string | null
@@ -163,6 +164,7 @@ export type Database = {
           onboarding_step?: number
           phone: string
           preferred_check_in_time?: string | null
+          push_token?: string | null
           stripe_customer_id?: string | null
           subscription_end?: string | null
           subscription_status?: string | null
@@ -181,6 +183,7 @@ export type Database = {
           onboarding_step?: number
           phone?: string
           preferred_check_in_time?: string | null
+          push_token?: string | null
           stripe_customer_id?: string | null
           subscription_end?: string | null
           subscription_status?: string | null
