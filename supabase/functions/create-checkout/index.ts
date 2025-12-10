@@ -107,10 +107,14 @@ serve(async (req) => {
 
     // If no customer, create one
     if (!customerId) {
+      // Only pass phone if it's a real phone number (not a device ID)
+      const isRealPhone = phone && !phone.startsWith('app_') && phone.length <= 20;
+      
       const customer = await stripe.customers.create({
-        phone: phone,
+        ...(isRealPhone ? { phone: phone } : {}),
         metadata: {
           billie_user_id: user_id,
+          billie_phone: phone, // Store full identifier in metadata
         },
       });
       customerId = customer.id;
