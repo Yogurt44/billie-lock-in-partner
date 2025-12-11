@@ -69,20 +69,50 @@ serve(async (req) => {
           
           // Get subscription details
           if (session.subscription) {
-            const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
-            const endDate = new Date(subscription.current_period_end * 1000);
+            try {
+              const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+              const endTimestamp = subscription.current_period_end;
+              
+              if (endTimestamp && !isNaN(endTimestamp)) {
+                const endDate = new Date(endTimestamp * 1000);
+                
+                const { error: updateError } = await supabase
+                  .from('billie_users')
+                  .update({
+                    subscription_status: 'active',
+                    subscription_end: endDate.toISOString(),
+                    stripe_customer_id: session.customer as string,
+                  })
+                  .eq('id', userId);
 
-            await supabase
+                if (updateError) {
+                  console.error(`[Webhook] Failed to update user ${userId}:`, updateError);
+                } else {
+                  console.log(`[Webhook] User ${userId} subscription activated until ${endDate.toISOString()}`);
+                }
+              } else {
+                console.error(`[Webhook] Invalid period end timestamp: ${endTimestamp}`);
+              }
+            } catch (subError) {
+              console.error(`[Webhook] Error retrieving subscription:`, subError);
+            }
+          } else {
+            // One-time payment or subscription not available yet - just mark as active
+            console.log(`[Webhook] No subscription ID, marking user ${userId} as active`);
+            const { error: updateError } = await supabase
               .from('billie_users')
               .update({
                 subscription_status: 'active',
-                subscription_end: endDate.toISOString(),
                 stripe_customer_id: session.customer as string,
               })
               .eq('id', userId);
-
-            console.log(`[Webhook] User ${userId} subscription activated until ${endDate}`);
+            
+            if (updateError) {
+              console.error(`[Webhook] Failed to update user ${userId}:`, updateError);
+            }
           }
+        } else {
+          console.log(`[Webhook] No billie_user_id in session metadata`);
         }
         break;
       }
