@@ -163,6 +163,9 @@ export default function AppChat() {
 
       if (data.response) {
         await addBillieMessagesWithDelay(data.response);
+      } else {
+        // No response means returning user - just clear loading state
+        setIsLoading(false);
       }
     } catch (error) {
       console.error("Error starting conversation:", error);
