@@ -141,6 +141,7 @@ export default function AppChat() {
       console.log("No previous conversation found");
     } finally {
       setIsInitialized(true);
+      setIsLoading(false); // Always ensure loading is false after load
     }
   };
 
