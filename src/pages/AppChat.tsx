@@ -49,6 +49,7 @@ export default function AppChat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -73,15 +74,15 @@ export default function AppChat() {
     loadConversation();
   }, []);
 
-  // Auto-start conversation if new user
+  // Auto-start conversation if new user (only after initialization check completes)
   useEffect(() => {
-    if (!hasStarted && messages.length === 0) {
+    if (isInitialized && !hasStarted && messages.length === 0) {
       const timer = setTimeout(() => {
         startConversation();
-      }, 500);
+      }, 300);
       return () => clearTimeout(timer);
     }
-  }, [hasStarted, messages.length]);
+  }, [isInitialized, hasStarted, messages.length]);
 
   // Add BILLIE messages one at a time with delays, sound, and haptics
   const addBillieMessagesWithDelay = async (response: string, paymentUrl?: string) => {
@@ -138,12 +139,25 @@ export default function AppChat() {
         
         // Check if user just returned from payment - show welcome message
         if (data.justSubscribed) {
+          setIsLoading(true);
           const welcomeMsg = "ayyy you're locked in now 🔒\n\nlet's get this started fr. i'll hit you up at your check-in times and make sure you're actually doing what you said you'd do\n\nwhat's on the agenda for today?";
+          
+          // Save this message to the backend so it doesn't show again
+          try {
+            await supabase.functions.invoke("app-chat", {
+              body: { action: "save-welcome", deviceId, deviceToken: getDeviceToken() },
+            });
+          } catch (e) {
+            console.log("Could not save welcome message");
+          }
+          
           await addBillieMessagesWithDelay(welcomeMsg);
         }
       }
     } catch (error) {
       console.log("No previous conversation found");
+    } finally {
+      setIsInitialized(true);
     }
   };
 
