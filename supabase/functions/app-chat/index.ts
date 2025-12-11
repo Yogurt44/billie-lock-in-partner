@@ -584,6 +584,24 @@ serve(async (req) => {
       });
     }
 
+    // Handle save-welcome action - save the post-payment welcome message
+    if (action === 'save-welcome') {
+      const { data: user } = await supabase
+        .from('billie_users')
+        .select('id')
+        .eq('phone', phone)
+        .maybeSingle();
+
+      if (user) {
+        const welcomeMsg = "ayyy you're locked in now 🔒\n\nlet's get this started fr. i'll hit you up at your check-in times and make sure you're actually doing what you said you'd do\n\nwhat's on the agenda for today?";
+        await saveMessage(user.id, 'billie', welcomeMsg);
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Handle start action - BILLIE initiates conversation (creates new user + token)
     if (action === 'start') {
       const user = await getOrCreateUser(deviceId, pushToken);
