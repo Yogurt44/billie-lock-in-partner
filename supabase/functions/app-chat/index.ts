@@ -568,7 +568,6 @@ serve(async (req) => {
       }
 
       const history = await getConversationHistory(user.id);
-      const messages = history.map(m => ({ role: m.role, content: m.content }));
       
       // Check if user just subscribed (completed onboarding + has active subscription + last message was payment prompt)
       let justSubscribed = false;
@@ -576,28 +575,17 @@ serve(async (req) => {
         const lastBillieMsg = [...history].reverse().find(m => m.role === 'billie');
         if (lastBillieMsg && lastBillieMsg.content.includes('tap here to pick your plan')) {
           justSubscribed = true;
+          // Save welcome message automatically so it doesn't trigger again
+          const welcomeMsg = "ayyy you're locked in now 🔒\n\nlet's get this started fr. i'll hit you up at your check-in times and make sure you're actually doing what you said you'd do\n\nwhat's on the agenda for today?";
+          await saveMessage(user.id, 'billie', welcomeMsg);
+          // Add to history for response
+          history.push({ role: 'billie', content: welcomeMsg, created_at: new Date().toISOString() });
         }
       }
 
+      const messages = history.map(m => ({ role: m.role, content: m.content }));
+
       return new Response(JSON.stringify({ messages, justSubscribed }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Handle save-welcome action - save the post-payment welcome message
-    if (action === 'save-welcome') {
-      const { data: user } = await supabase
-        .from('billie_users')
-        .select('id')
-        .eq('phone', phone)
-        .maybeSingle();
-
-      if (user) {
-        const welcomeMsg = "ayyy you're locked in now 🔒\n\nlet's get this started fr. i'll hit you up at your check-in times and make sure you're actually doing what you said you'd do\n\nwhat's on the agenda for today?";
-        await saveMessage(user.id, 'billie', welcomeMsg);
-      }
-
-      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

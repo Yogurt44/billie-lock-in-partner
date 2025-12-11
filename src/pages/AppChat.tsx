@@ -136,23 +136,6 @@ export default function AppChat() {
         }
         setMessages(expandedMessages);
         setHasStarted(true);
-        
-        // Check if user just returned from payment - show welcome message
-        if (data.justSubscribed) {
-          setIsLoading(true);
-          const welcomeMsg = "ayyy you're locked in now 🔒\n\nlet's get this started fr. i'll hit you up at your check-in times and make sure you're actually doing what you said you'd do\n\nwhat's on the agenda for today?";
-          
-          // Save this message to the backend so it doesn't show again
-          try {
-            await supabase.functions.invoke("app-chat", {
-              body: { action: "save-welcome", deviceId, deviceToken: getDeviceToken() },
-            });
-          } catch (e) {
-            console.log("Could not save welcome message");
-          }
-          
-          await addBillieMessagesWithDelay(welcomeMsg);
-        }
       }
     } catch (error) {
       console.log("No previous conversation found");
