@@ -557,7 +557,7 @@ serve(async (req) => {
     if (action === 'load') {
       const { data: user } = await supabase
         .from('billie_users')
-        .select('id')
+        .select('id, subscription_status, onboarding_step')
         .eq('phone', phone)
         .maybeSingle();
 
@@ -569,8 +569,17 @@ serve(async (req) => {
 
       const history = await getConversationHistory(user.id);
       const messages = history.map(m => ({ role: m.role, content: m.content }));
+      
+      // Check if user just subscribed (completed onboarding + has active subscription + last message was payment prompt)
+      let justSubscribed = false;
+      if (user.subscription_status === 'active' && user.onboarding_step === 7 && history.length > 0) {
+        const lastBillieMsg = [...history].reverse().find(m => m.role === 'billie');
+        if (lastBillieMsg && lastBillieMsg.content.includes('tap here to pick your plan')) {
+          justSubscribed = true;
+        }
+      }
 
-      return new Response(JSON.stringify({ messages }), {
+      return new Response(JSON.stringify({ messages, justSubscribed }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
