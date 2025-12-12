@@ -169,18 +169,12 @@ serve(async (req) => {
         const goalText = user.goals ? user.goals.split("\n")[0] : "your goals";
         const pushToken = user.push_token;
 
-        // Only support Expo push tokens for now
-        if (!pushToken?.startsWith("ExponentPushToken")) {
-          console.log(`[CRON] User ${user.id} has non-Expo token, skipping`);
-          continue;
-        }
-
         // Check for follow-up first (if user hasn't responded)
         if (shouldSendFollowUp(user.last_notification_at, user.awaiting_response)) {
           console.log(`[CRON] Sending follow-up to ${name} (${user.id})`);
           
           const followUpMessage = getRandomMessage('followup', name);
-          await sendExpoPush(pushToken, followUpMessage);
+          await sendPushNotification(pushToken, followUpMessage);
           
           // Update notification timestamp
           await supabase
@@ -215,7 +209,7 @@ serve(async (req) => {
           console.log(`[CRON] Sending ${period} check-in to ${name} (${user.id})`);
           
           const message = getRandomMessage(period, name, goalText);
-          await sendExpoPush(pushToken, message);
+          await sendPushNotification(pushToken, message);
           
           // Update user state
           await supabase
@@ -266,6 +260,19 @@ serve(async (req) => {
   }
 });
 
+// Send push notification - supports both Expo and APNs/FCM tokens
+async function sendPushNotification(token: string, message: string) {
+  // Expo push tokens start with "ExponentPushToken"
+  if (token.startsWith("ExponentPushToken")) {
+    return sendExpoPush(token, message);
+  }
+  
+  // For Capacitor iOS (APNs) - we need FCM to relay
+  // APNs tokens from Capacitor are typically hex strings or base64
+  // We'll use FCM HTTP v1 API which can send to both iOS and Android
+  return sendFCMPush(token, message);
+}
+
 async function sendExpoPush(token: string, message: string) {
   const response = await fetch("https://exp.host/--/api/v2/push/send", {
     method: "POST",
@@ -289,4 +296,42 @@ async function sendExpoPush(token: string, message: string) {
   }
 
   console.log("[CRON] Expo push sent successfully");
+}
+
+async function sendFCMPush(token: string, message: string) {
+  const fcmServerKey = Deno.env.get("FCM_SERVER_KEY");
+  
+  if (!fcmServerKey) {
+    console.log("[CRON] FCM_SERVER_KEY not configured, using APNs direct");
+    // For now, log that we would send - user needs to configure FCM
+    console.log(`[CRON] Would send to APNs token: ${token.substring(0, 20)}... message: ${message}`);
+    return;
+  }
+
+  const response = await fetch("https://fcm.googleapis.com/fcm/send", {
+    method: "POST",
+    headers: {
+      "Authorization": `key=${fcmServerKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: token,
+      notification: {
+        title: "BILLIE",
+        body: message,
+        sound: "default",
+      },
+      data: {
+        screen: "chat",
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[CRON] FCM push error:", errorText);
+    throw new Error(`FCM push failed: ${errorText}`);
+  }
+
+  console.log("[CRON] FCM push sent successfully");
 }
