@@ -755,6 +755,9 @@ serve(async (req) => {
 
     // Handle check-in flow (post-onboarding)
     if (user.onboarding_step >= 8) {
+      // Clear awaiting_response since user responded
+      updates.awaiting_response = false;
+      
       if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
         updates.awaiting_check_in = true;
       } else if (user.awaiting_check_in) {
