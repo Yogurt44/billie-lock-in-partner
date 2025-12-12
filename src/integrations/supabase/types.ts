@@ -137,6 +137,7 @@ export type Database = {
           awaiting_check_in: boolean
           created_at: string
           current_streak: number
+          email: string | null
           goals: string | null
           id: string
           last_check_in_date: string | null
@@ -156,6 +157,7 @@ export type Database = {
           awaiting_check_in?: boolean
           created_at?: string
           current_streak?: number
+          email?: string | null
           goals?: string | null
           id?: string
           last_check_in_date?: string | null
@@ -175,6 +177,7 @@ export type Database = {
           awaiting_check_in?: boolean
           created_at?: string
           current_streak?: number
+          email?: string | null
           goals?: string | null
           id?: string
           last_check_in_date?: string | null
