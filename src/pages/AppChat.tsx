@@ -52,8 +52,9 @@ export default function AppChat() {
   // Sound effects and haptic feedback
   const { playMessageReceived, playSentSound } = useMessageSound();
   
-  // Push notifications - use device ID
-  const { token: pushToken } = usePushNotifications(deviceId);
+  // Push notifications - request permission at right moment
+  const { token: pushToken, requestPermission, permissionStatus } = usePushNotifications(deviceId);
+  const [hasRequestedNotifications, setHasRequestedNotifications] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -215,6 +216,16 @@ export default function AppChat() {
       // Check for email/OTP flow triggers
       if (data.awaitingEmail) {
         setAwaitingEmail(true);
+      }
+
+      // Request notification permission when user agrees to check-in plan (step 6->7 transition)
+      // This is the perfect moment - user just said "yes" to getting check-in messages
+      if (data.awaitingEmail && !hasRequestedNotifications && permissionStatus !== 'granted') {
+        setHasRequestedNotifications(true);
+        const granted = await requestPermission();
+        if (granted) {
+          console.log("[Push] Permission granted after plan agreement");
+        }
       }
 
       await addBillieMessagesWithDelay(data.response, data.paymentUrl, data.awaitingEmail, data.awaitingOtp);
