@@ -12,17 +12,26 @@ serve(async (req) => {
   }
 
   try {
-    // Validate cron secret to prevent unauthorized access
+    // Validate authorization - check for either:
+    // 1. Valid Authorization header with anon key (from pg_cron)
+    // 2. x-cron-secret header matching CRON_SECRET
+    const authHeader = req.headers.get("Authorization");
     const cronSecret = Deno.env.get("CRON_SECRET");
     const providedSecret = req.headers.get("x-cron-secret");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
     
-    if (!cronSecret || providedSecret !== cronSecret) {
-      console.error("[CRON] Unauthorized: Invalid or missing cron secret");
+    const hasValidAuth = authHeader && anonKey && authHeader.includes(anonKey);
+    const hasValidCronSecret = cronSecret && providedSecret === cronSecret;
+    
+    if (!hasValidAuth && !hasValidCronSecret) {
+      console.error("[CRON] Unauthorized: Invalid authorization");
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
       );
     }
+    
+    console.log("[CRON] Authorization validated successfully");
 
     console.log("[CRON] Daily check-in reminder starting...");
 
