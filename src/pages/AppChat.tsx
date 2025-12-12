@@ -8,35 +8,11 @@ import { useNavigate } from "react-router-dom";
 import billieIcon from "@/assets/billie-icon.png";
 import { useMessageSound } from "@/hooks/useMessageSound";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Message {
   role: "user" | "billie";
   content: string;
-}
-
-// Generate or get device ID for anonymous users
-function getDeviceId(): string {
-  let deviceId = localStorage.getItem("billie-device-id");
-  if (!deviceId) {
-    deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-    localStorage.setItem("billie-device-id", deviceId);
-  }
-  return deviceId;
-}
-
-// Get stored device token (secure auth token from server)
-function getDeviceToken(): string | null {
-  return localStorage.getItem("billie-device-token");
-}
-
-// Store device token from server
-function setDeviceToken(token: string): void {
-  localStorage.setItem("billie-device-token", token);
-}
-
-// Clear device token (for reset)
-function clearDeviceToken(): void {
-  localStorage.removeItem("billie-device-token");
 }
 
 // Random delay between 1-2 seconds to simulate real texting
@@ -54,12 +30,16 @@ export default function AppChat() {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   
+  // Auth - get authenticated user
+  const { user } = useAuth();
+  const userId = user?.id;
+  const userEmail = user?.email;
+  
   // Sound effects and haptic feedback
   const { playMessageReceived, playSentSound } = useMessageSound();
   
-  // Push notifications
-  const deviceId = getDeviceId();
-  const { token: pushToken } = usePushNotifications(deviceId);
+  // Push notifications - use user ID instead of device ID
+  const { token: pushToken } = usePushNotifications(userId || "");
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -69,20 +49,22 @@ export default function AppChat() {
     scrollToBottom();
   }, [messages]);
 
-  // Load previous messages on mount
+  // Load previous messages on mount (when user is available)
   useEffect(() => {
-    loadConversation();
-  }, []);
+    if (userId) {
+      loadConversation();
+    }
+  }, [userId]);
 
   // Auto-start conversation if new user (only after initialization check completes)
   useEffect(() => {
-    if (isInitialized && !hasStarted && messages.length === 0) {
+    if (userId && isInitialized && !hasStarted && messages.length === 0) {
       const timer = setTimeout(() => {
         startConversation();
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [isInitialized, hasStarted, messages.length]);
+  }, [userId, isInitialized, hasStarted, messages.length]);
 
   // Add BILLIE messages one at a time with delays, sound, and haptics
   const addBillieMessagesWithDelay = async (response: string, paymentUrl?: string) => {
@@ -114,9 +96,10 @@ export default function AppChat() {
   };
 
   const loadConversation = async () => {
+    if (!userId) return;
     try {
       const { data, error } = await supabase.functions.invoke("app-chat", {
-        body: { action: "load", deviceId },
+        body: { action: "load", userId, userEmail },
       });
 
       if (error) throw error;
@@ -141,31 +124,25 @@ export default function AppChat() {
       console.log("No previous conversation found");
     } finally {
       setIsInitialized(true);
-      setIsLoading(false); // Always ensure loading is false after load
+      setIsLoading(false);
     }
   };
 
   const startConversation = async () => {
-    if (hasStarted) return;
+    if (hasStarted || !userId) return;
     setHasStarted(true);
     setIsLoading(true);
 
     try {
       const { data, error } = await supabase.functions.invoke("app-chat", {
-        body: { action: "start", deviceId, pushToken },
+        body: { action: "start", userId, userEmail, pushToken },
       });
 
       if (error) throw error;
 
-      // Store the device token for future authenticated requests
-      if (data.deviceToken) {
-        setDeviceToken(data.deviceToken);
-      }
-
       if (data.response) {
         await addBillieMessagesWithDelay(data.response);
       } else {
-        // No response means returning user - just clear loading state
         setIsLoading(false);
       }
     } catch (error) {
@@ -178,34 +155,22 @@ export default function AppChat() {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !userId) return;
 
     const userMessage = input.trim();
     setInput("");
     
-    // Play sent sound
     playSentSound();
     
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
     try {
-      const deviceToken = getDeviceToken();
-      
       const { data, error } = await supabase.functions.invoke("app-chat", {
-        body: { message: userMessage, deviceId, deviceToken, pushToken },
+        body: { message: userMessage, userId, userEmail, pushToken },
       });
 
       if (error) throw error;
-
-      // Handle token errors - need to re-authenticate
-      if (data.code === 'TOKEN_REQUIRED' || data.code === 'INVALID_TOKEN') {
-        // Clear old token and restart conversation to get new token
-        clearDeviceToken();
-        toast.error("Session expired. Please restart the conversation.");
-        setIsLoading(false);
-        return;
-      }
 
       if (data.error) {
         toast.error(data.error);
