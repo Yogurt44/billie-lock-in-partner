@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -8,6 +9,7 @@ import billieIcon from "@/assets/billie-icon.png";
 import { Mail, ArrowRight, Loader2 } from "lucide-react";
 
 export default function AppAuth() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"email" | "verify">("email");
@@ -20,16 +22,14 @@ export default function AppAuth() {
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: `${window.location.origin}/app`,
-        },
+      const { data, error } = await supabase.functions.invoke("send-otp", {
+        body: { email: email.trim(), action: "send" },
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      toast.success("Check your email for the verification code!");
+      toast.success("Check your email for the 6-digit code!");
       setStep("verify");
     } catch (error: any) {
       console.error("Error sending OTP:", error);
@@ -45,16 +45,23 @@ export default function AppAuth() {
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: email.trim(),
-        token: otp.trim(),
-        type: "email",
+      const { data, error } = await supabase.functions.invoke("send-otp", {
+        body: { email: email.trim(), action: "verify", code: otp.trim() },
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      // Store userId in localStorage for the app
+      if (data.userId) {
+        localStorage.setItem("billie_user_id", data.userId);
+        if (rememberMe) {
+          localStorage.setItem("billie_email", email.trim());
+        }
+      }
 
       toast.success("You're in!");
-      // Auth state change will handle redirect
+      navigate("/app");
     } catch (error: any) {
       console.error("Error verifying OTP:", error);
       toast.error(error.message || "Invalid code. Try again.");
@@ -67,14 +74,13 @@ export default function AppAuth() {
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: `${window.location.origin}/app`,
-        },
+      const { data, error } = await supabase.functions.invoke("send-otp", {
+        body: { email: email.trim(), action: "send" },
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
       toast.success("New code sent!");
     } catch (error: any) {
       toast.error(error.message || "Failed to resend");
