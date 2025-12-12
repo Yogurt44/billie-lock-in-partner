@@ -135,13 +135,19 @@ export type Database = {
       billie_users: {
         Row: {
           awaiting_check_in: boolean
+          awaiting_response: boolean | null
+          check_in_frequency: string | null
           created_at: string
           current_streak: number
           email: string | null
+          evening_check_in_time: string | null
           goals: string | null
           id: string
           last_check_in_date: string | null
+          last_notification_at: string | null
           longest_streak: number
+          midday_check_in_time: string | null
+          morning_check_in_time: string | null
           name: string | null
           onboarding_step: number
           phone: string
@@ -155,13 +161,19 @@ export type Database = {
         }
         Insert: {
           awaiting_check_in?: boolean
+          awaiting_response?: boolean | null
+          check_in_frequency?: string | null
           created_at?: string
           current_streak?: number
           email?: string | null
+          evening_check_in_time?: string | null
           goals?: string | null
           id?: string
           last_check_in_date?: string | null
+          last_notification_at?: string | null
           longest_streak?: number
+          midday_check_in_time?: string | null
+          morning_check_in_time?: string | null
           name?: string | null
           onboarding_step?: number
           phone: string
@@ -175,13 +187,19 @@ export type Database = {
         }
         Update: {
           awaiting_check_in?: boolean
+          awaiting_response?: boolean | null
+          check_in_frequency?: string | null
           created_at?: string
           current_streak?: number
           email?: string | null
+          evening_check_in_time?: string | null
           goals?: string | null
           id?: string
           last_check_in_date?: string | null
+          last_notification_at?: string | null
           longest_streak?: number
+          midday_check_in_time?: string | null
+          morning_check_in_time?: string | null
           name?: string | null
           onboarding_step?: number
           phone?: string
