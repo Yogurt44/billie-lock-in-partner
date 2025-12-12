@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import billieIcon from "@/assets/billie-icon.png";
@@ -11,6 +12,7 @@ export default function AppAuth() {
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"email" | "verify">("email");
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +101,7 @@ export default function AppAuth() {
 
         {step === "email" ? (
           <form onSubmit={handleSendOtp} className="space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-4">
               <p className="text-center text-sm text-muted-foreground">
                 enter your email to get started
               </p>
@@ -115,6 +117,19 @@ export default function AppAuth() {
                   autoFocus
                   required
                 />
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  id="remember" 
+                  checked={rememberMe}
+                  onCheckedChange={(checked) => setRememberMe(checked === true)}
+                />
+                <label 
+                  htmlFor="remember" 
+                  className="text-sm text-muted-foreground cursor-pointer"
+                >
+                  remember me
+                </label>
               </div>
             </div>
             <Button 
