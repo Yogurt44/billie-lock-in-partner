@@ -7,6 +7,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const logStep = (step: string, details?: any) => {
+  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  console.log(`[Webhook] ${step}${detailsStr}`);
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -30,7 +35,7 @@ serve(async (req) => {
 
     // SECURITY: Always require webhook secret and signature verification
     if (!webhookSecret) {
-      console.error("[Webhook] STRIPE_WEBHOOK_SECRET not configured");
+      logStep("ERROR: STRIPE_WEBHOOK_SECRET not configured");
       return new Response(JSON.stringify({ error: "Webhook secret not configured" }), {
         status: 500,
         headers: corsHeaders,
@@ -38,7 +43,7 @@ serve(async (req) => {
     }
 
     if (!signature) {
-      console.error("[Webhook] Missing stripe-signature header");
+      logStep("ERROR: Missing stripe-signature header");
       return new Response(JSON.stringify({ error: "Missing signature" }), {
         status: 400,
         headers: corsHeaders,
@@ -47,72 +52,118 @@ serve(async (req) => {
 
     try {
       event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
+      logStep("Signature verified successfully");
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown error";
-      console.error("[Webhook] Signature verification failed:", errMsg);
+      logStep("ERROR: Signature verification failed", { message: errMsg });
       return new Response(JSON.stringify({ error: "Invalid signature" }), {
         status: 400,
         headers: corsHeaders,
       });
     }
 
-    console.log(`[Webhook] Event received: ${event.type}`);
+    logStep(`Event received: ${event.type}`, { eventId: event.id });
 
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.billie_user_id;
-        const phone = session.metadata?.phone;
+        const customerId = session.customer as string;
 
-        if (userId) {
-          console.log(`[Webhook] Checkout completed for user ${userId}`);
+        logStep("Processing checkout.session.completed", { 
+          userId, 
+          customerId,
+          subscriptionId: session.subscription,
+          metadata: session.metadata 
+        });
+
+        if (!userId) {
+          // Try to find user by customer ID as fallback
+          logStep("No billie_user_id in metadata, trying customer lookup");
+          const { data: userByCustomer } = await supabase
+            .from('billie_users')
+            .select('id')
+            .eq('stripe_customer_id', customerId)
+            .maybeSingle();
           
-          // Get subscription details
-          if (session.subscription) {
-            try {
+          if (userByCustomer) {
+            logStep("Found user by customer ID", { foundUserId: userByCustomer.id });
+            // Update subscription status
+            if (session.subscription) {
               const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
-              const endTimestamp = subscription.current_period_end;
+              const endDate = new Date(subscription.current_period_end * 1000);
               
-              if (endTimestamp && !isNaN(endTimestamp)) {
-                const endDate = new Date(endTimestamp * 1000);
-                
-                const { error: updateError } = await supabase
-                  .from('billie_users')
-                  .update({
-                    subscription_status: 'active',
-                    subscription_end: endDate.toISOString(),
-                    stripe_customer_id: session.customer as string,
-                  })
-                  .eq('id', userId);
-
-                if (updateError) {
-                  console.error(`[Webhook] Failed to update user ${userId}:`, updateError);
-                } else {
-                  console.log(`[Webhook] User ${userId} subscription activated until ${endDate.toISOString()}`);
-                }
+              const { error: updateError } = await supabase
+                .from('billie_users')
+                .update({
+                  subscription_status: 'active',
+                  subscription_end: endDate.toISOString(),
+                })
+                .eq('id', userByCustomer.id);
+              
+              if (updateError) {
+                logStep("ERROR: Failed to update user by customer ID", { error: updateError });
               } else {
-                console.error(`[Webhook] Invalid period end timestamp: ${endTimestamp}`);
+                logStep("Updated subscription via customer lookup", { userId: userByCustomer.id });
               }
-            } catch (subError) {
-              console.error(`[Webhook] Error retrieving subscription:`, subError);
             }
           } else {
-            // One-time payment or subscription not available yet - just mark as active
-            console.log(`[Webhook] No subscription ID, marking user ${userId} as active`);
-            const { error: updateError } = await supabase
-              .from('billie_users')
-              .update({
-                subscription_status: 'active',
-                stripe_customer_id: session.customer as string,
-              })
-              .eq('id', userId);
+            logStep("WARNING: Could not find user for checkout session");
+          }
+          break;
+        }
+
+        // Get subscription details
+        if (session.subscription) {
+          try {
+            const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+            const endTimestamp = subscription.current_period_end;
             
-            if (updateError) {
-              console.error(`[Webhook] Failed to update user ${userId}:`, updateError);
+            logStep("Retrieved subscription details", { 
+              subscriptionId: subscription.id,
+              status: subscription.status,
+              endTimestamp 
+            });
+            
+            if (endTimestamp && !isNaN(endTimestamp)) {
+              const endDate = new Date(endTimestamp * 1000);
+              
+              const { error: updateError } = await supabase
+                .from('billie_users')
+                .update({
+                  subscription_status: 'active',
+                  subscription_end: endDate.toISOString(),
+                  stripe_customer_id: customerId,
+                })
+                .eq('id', userId);
+
+              if (updateError) {
+                logStep("ERROR: Failed to update user", { userId, error: updateError });
+              } else {
+                logStep("SUCCESS: User subscription activated", { userId, until: endDate.toISOString() });
+              }
+            } else {
+              logStep("ERROR: Invalid period end timestamp", { endTimestamp });
             }
+          } catch (subError) {
+            logStep("ERROR: Failed to retrieve subscription", { error: subError });
           }
         } else {
-          console.log(`[Webhook] No billie_user_id in session metadata`);
+          // One-time payment or subscription not available yet - just mark as active
+          logStep("No subscription ID, marking user as active");
+          const { error: updateError } = await supabase
+            .from('billie_users')
+            .update({
+              subscription_status: 'active',
+              stripe_customer_id: customerId,
+            })
+            .eq('id', userId);
+          
+          if (updateError) {
+            logStep("ERROR: Failed to update user", { userId, error: updateError });
+          } else {
+            logStep("SUCCESS: User marked active (no subscription)", { userId });
+          }
         }
         break;
       }
@@ -120,20 +171,48 @@ serve(async (req) => {
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
         const userId = subscription.metadata?.billie_user_id;
+        const customerId = subscription.customer as string;
 
-        if (userId) {
+        logStep("Processing customer.subscription.updated", { 
+          userId, 
+          customerId,
+          status: subscription.status 
+        });
+
+        // Try to find user by userId or customerId
+        let targetUserId = userId;
+        if (!targetUserId) {
+          const { data: userByCustomer } = await supabase
+            .from('billie_users')
+            .select('id')
+            .eq('stripe_customer_id', customerId)
+            .maybeSingle();
+          
+          if (userByCustomer) {
+            targetUserId = userByCustomer.id;
+            logStep("Found user by customer ID", { targetUserId });
+          }
+        }
+
+        if (targetUserId) {
           const status = subscription.status === 'active' ? 'active' : 'inactive';
           const endDate = new Date(subscription.current_period_end * 1000);
 
-          await supabase
+          const { error: updateError } = await supabase
             .from('billie_users')
             .update({
               subscription_status: status,
               subscription_end: endDate.toISOString(),
             })
-            .eq('id', userId);
+            .eq('id', targetUserId);
 
-          console.log(`[Webhook] User ${userId} subscription updated: ${status}`);
+          if (updateError) {
+            logStep("ERROR: Failed to update user", { targetUserId, error: updateError });
+          } else {
+            logStep("SUCCESS: Subscription updated", { targetUserId, status });
+          }
+        } else {
+          logStep("WARNING: Could not find user for subscription update");
         }
         break;
       }
@@ -141,16 +220,36 @@ serve(async (req) => {
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
         const userId = subscription.metadata?.billie_user_id;
+        const customerId = subscription.customer as string;
 
-        if (userId) {
-          await supabase
+        logStep("Processing customer.subscription.deleted", { userId, customerId });
+
+        let targetUserId = userId;
+        if (!targetUserId) {
+          const { data: userByCustomer } = await supabase
             .from('billie_users')
-            .update({
-              subscription_status: 'canceled',
-            })
-            .eq('id', userId);
+            .select('id')
+            .eq('stripe_customer_id', customerId)
+            .maybeSingle();
+          
+          if (userByCustomer) {
+            targetUserId = userByCustomer.id;
+          }
+        }
 
-          console.log(`[Webhook] User ${userId} subscription canceled`);
+        if (targetUserId) {
+          const { error: updateError } = await supabase
+            .from('billie_users')
+            .update({ subscription_status: 'canceled' })
+            .eq('id', targetUserId);
+
+          if (updateError) {
+            logStep("ERROR: Failed to update user", { targetUserId, error: updateError });
+          } else {
+            logStep("SUCCESS: Subscription canceled", { targetUserId });
+          }
+        } else {
+          logStep("WARNING: Could not find user for subscription deletion");
         }
         break;
       }
@@ -159,26 +258,34 @@ serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
 
+        logStep("Processing invoice.payment_failed", { customerId });
+
         // Find user by Stripe customer ID
         const { data: user } = await supabase
           .from('billie_users')
           .select('id')
           .eq('stripe_customer_id', customerId)
-          .single();
+          .maybeSingle();
 
         if (user) {
-          await supabase
+          const { error: updateError } = await supabase
             .from('billie_users')
             .update({ subscription_status: 'past_due' })
             .eq('id', user.id);
 
-          console.log(`[Webhook] User ${user.id} payment failed`);
+          if (updateError) {
+            logStep("ERROR: Failed to update user", { userId: user.id, error: updateError });
+          } else {
+            logStep("SUCCESS: User marked as past_due", { userId: user.id });
+          }
+        } else {
+          logStep("WARNING: Could not find user for payment failure");
         }
         break;
       }
 
       default:
-        console.log(`[Webhook] Unhandled event type: ${event.type}`);
+        logStep(`Unhandled event type: ${event.type}`);
     }
 
     return new Response(JSON.stringify({ received: true }), {
@@ -186,9 +293,8 @@ serve(async (req) => {
       status: 200,
     });
   } catch (error) {
-    console.error("[Webhook] Error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    logStep("ERROR: Unhandled exception", { error: error instanceof Error ? error.message : error });
+    return new Response(JSON.stringify({ error: "Internal error" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });
