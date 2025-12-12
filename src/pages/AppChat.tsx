@@ -8,16 +8,26 @@ import { useNavigate } from "react-router-dom";
 import billieIcon from "@/assets/billie-icon.png";
 import { useMessageSound } from "@/hooks/useMessageSound";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
-import { useAuth } from "@/hooks/useAuth";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 
 interface Message {
   role: "user" | "billie";
   content: string;
+  isOtpInput?: boolean;
 }
 
 // Random delay between 1-2 seconds to simulate real texting
 function getRandomDelay(): number {
   return 1000 + Math.random() * 1000;
+}
+
+// Generate or retrieve anonymous device ID
+function getDeviceId(): string {
+  const stored = localStorage.getItem("billie_device_id");
+  if (stored) return stored;
+  const newId = `device_${crypto.randomUUID()}`;
+  localStorage.setItem("billie_device_id", newId);
+  return newId;
 }
 
 export default function AppChat() {
@@ -26,20 +36,24 @@ export default function AppChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [deviceId] = useState(getDeviceId);
+  
+  // Email verification state
+  const [awaitingEmail, setAwaitingEmail] = useState(false);
+  const [awaitingOtp, setAwaitingOtp] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [otpValue, setOtpValue] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   
-  // Auth - get authenticated user
-  const { user } = useAuth();
-  const userId = user?.id;
-  const userEmail = user?.email;
-  
   // Sound effects and haptic feedback
   const { playMessageReceived, playSentSound } = useMessageSound();
   
-  // Push notifications - use user ID instead of device ID
-  const { token: pushToken } = usePushNotifications(userId || "");
+  // Push notifications - use device ID
+  const { token: pushToken } = usePushNotifications(deviceId);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -49,25 +63,23 @@ export default function AppChat() {
     scrollToBottom();
   }, [messages]);
 
-  // Load previous messages on mount (when user is available)
+  // Load previous messages on mount
   useEffect(() => {
-    if (userId) {
-      loadConversation();
-    }
-  }, [userId]);
+    loadConversation();
+  }, []);
 
   // Auto-start conversation if new user (only after initialization check completes)
   useEffect(() => {
-    if (userId && isInitialized && !hasStarted && messages.length === 0) {
+    if (isInitialized && !hasStarted && messages.length === 0) {
       const timer = setTimeout(() => {
         startConversation();
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [userId, isInitialized, hasStarted, messages.length]);
+  }, [isInitialized, hasStarted, messages.length]);
 
   // Add BILLIE messages one at a time with delays, sound, and haptics
-  const addBillieMessagesWithDelay = async (response: string, paymentUrl?: string) => {
+  const addBillieMessagesWithDelay = async (response: string, paymentUrl?: string, showEmailInput?: boolean, showOtpInput?: boolean) => {
     const bubbles = response.split("\n\n").filter(b => b.trim());
     
     for (let i = 0; i < bubbles.length; i++) {
@@ -89,6 +101,14 @@ export default function AppChat() {
       }
     }
     
+    // Handle email/OTP input states
+    if (showEmailInput) {
+      setAwaitingEmail(true);
+    }
+    if (showOtpInput) {
+      setAwaitingOtp(true);
+    }
+    
     // Handle payment redirect after all messages
     if (paymentUrl) {
       window.open(paymentUrl, '_blank');
@@ -96,10 +116,9 @@ export default function AppChat() {
   };
 
   const loadConversation = async () => {
-    if (!userId) return;
     try {
       const { data, error } = await supabase.functions.invoke("app-chat", {
-        body: { action: "load", userId, userEmail },
+        body: { action: "load", deviceId },
       });
 
       if (error) throw error;
@@ -119,6 +138,15 @@ export default function AppChat() {
         }
         setMessages(expandedMessages);
         setHasStarted(true);
+        
+        // Check if we're in email verification flow
+        if (data.awaitingEmail) {
+          setAwaitingEmail(true);
+        }
+        if (data.awaitingOtp) {
+          setAwaitingOtp(true);
+          setPendingEmail(data.pendingEmail || "");
+        }
       }
     } catch (error) {
       console.log("No previous conversation found");
@@ -129,13 +157,13 @@ export default function AppChat() {
   };
 
   const startConversation = async () => {
-    if (hasStarted || !userId) return;
+    if (hasStarted) return;
     setHasStarted(true);
     setIsLoading(true);
 
     try {
       const { data, error } = await supabase.functions.invoke("app-chat", {
-        body: { action: "start", userId, userEmail, pushToken },
+        body: { action: "start", deviceId, pushToken },
       });
 
       if (error) throw error;
@@ -155,7 +183,7 @@ export default function AppChat() {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading || !userId) return;
+    if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
     setInput("");
@@ -165,9 +193,15 @@ export default function AppChat() {
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
+    // Check if this looks like an email during email collection phase
+    if (awaitingEmail && userMessage.includes("@")) {
+      await handleEmailSubmit(userMessage);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke("app-chat", {
-        body: { message: userMessage, userId, userEmail, pushToken },
+        body: { message: userMessage, deviceId, pushToken },
       });
 
       if (error) throw error;
@@ -178,13 +212,124 @@ export default function AppChat() {
         return;
       }
 
-      await addBillieMessagesWithDelay(data.response, data.paymentUrl);
+      // Check for email/OTP flow triggers
+      if (data.awaitingEmail) {
+        setAwaitingEmail(true);
+      }
+
+      await addBillieMessagesWithDelay(data.response, data.paymentUrl, data.awaitingEmail, data.awaitingOtp);
     } catch (error) {
       console.error("Error:", error);
       toast.error("Failed to send. Try again.");
       setIsLoading(false);
     } finally {
       inputRef.current?.focus();
+    }
+  };
+
+  const handleEmailSubmit = async (email: string) => {
+    setIsVerifying(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("send-otp", {
+        body: { action: "send", email },
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setPendingEmail(email);
+        setAwaitingEmail(false);
+        setAwaitingOtp(true);
+        
+        // Also notify the chat function about the pending email
+        await supabase.functions.invoke("app-chat", {
+          body: { action: "set-pending-email", deviceId, email },
+        });
+        
+        playMessageReceived();
+        setMessages(prev => [...prev, { 
+          role: "billie", 
+          content: `sent a 6-digit code to ${email}\n\ncheck your inbox (or spam lol) and enter it here` 
+        }]);
+      } else {
+        toast.error(data.error || "Failed to send code");
+      }
+    } catch (error) {
+      console.error("Error sending OTP:", error);
+      toast.error("Failed to send verification code");
+    } finally {
+      setIsVerifying(false);
+      setIsLoading(false);
+    }
+  };
+
+  const handleOtpSubmit = async () => {
+    if (otpValue.length !== 6) return;
+    
+    setIsVerifying(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("send-otp", {
+        body: { action: "verify", email: pendingEmail, code: otpValue },
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setAwaitingOtp(false);
+        setOtpValue("");
+        
+        // Notify chat function that email is verified
+        const { data: chatData } = await supabase.functions.invoke("app-chat", {
+          body: { action: "verify-email", deviceId, email: pendingEmail },
+        });
+        
+        playMessageReceived();
+        
+        if (chatData?.response) {
+          await addBillieMessagesWithDelay(chatData.response, chatData.paymentUrl);
+        } else {
+          setMessages(prev => [...prev, { 
+            role: "billie", 
+            content: "verified ✓\n\nok now i can actually remember you when you come back" 
+          }]);
+        }
+        
+        toast.success("Email verified!");
+      } else {
+        toast.error(data.error || "Invalid code");
+        setOtpValue("");
+      }
+    } catch (error) {
+      console.error("Error verifying OTP:", error);
+      toast.error("Failed to verify code");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (!pendingEmail) return;
+    
+    setIsVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("send-otp", {
+        body: { action: "send", email: pendingEmail },
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        toast.success("Code resent!");
+      } else {
+        toast.error(data.error || "Failed to resend code");
+      }
+    } catch (error) {
+      console.error("Error resending OTP:", error);
+      toast.error("Failed to resend code");
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -254,6 +399,46 @@ export default function AppChat() {
             );
           })}
 
+          {/* OTP Input inline */}
+          {awaitingOtp && (
+            <div className="flex justify-start animate-fade-in">
+              <div className="bg-muted/80 rounded-2xl rounded-bl-md px-4 py-4 space-y-3">
+                <InputOTP
+                  maxLength={6}
+                  value={otpValue}
+                  onChange={setOtpValue}
+                  disabled={isVerifying}
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleOtpSubmit}
+                    disabled={otpValue.length !== 6 || isVerifying}
+                  >
+                    {isVerifying ? "Verifying..." : "Verify"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleResendCode}
+                    disabled={isVerifying}
+                  >
+                    Resend
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {isLoading && (
             <div className="flex justify-start animate-fade-in">
               <div className="bg-muted/80 rounded-2xl rounded-bl-md px-4 py-3">
@@ -288,15 +473,16 @@ export default function AppChat() {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Message"
-                disabled={isLoading}
+                placeholder={awaitingEmail ? "Enter your email" : awaitingOtp ? "Enter code above" : "Message"}
+                disabled={isLoading || awaitingOtp}
+                type={awaitingEmail ? "email" : "text"}
                 className="border-0 bg-transparent rounded-full focus-visible:ring-0 focus-visible:ring-offset-0 px-4"
                 autoFocus
               />
             </div>
             <Button 
               type="submit" 
-              disabled={!input.trim() || isLoading} 
+              disabled={!input.trim() || isLoading || awaitingOtp} 
               size="icon"
               className="rounded-full h-10 w-10 shrink-0"
             >

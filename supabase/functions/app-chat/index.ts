@@ -36,7 +36,8 @@ const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a blunt Gen Z accountability partn
 4. ask for timezone and when they want check-ins
 5. create a NUMBERED plan specific to their situation
 6. ask "does that sound helpful or would that be annoying?"
-7. only then mention payment
+7. ask for their email so you can remember them
+8. only then mention payment
 
 ## CREATING PLANS:
 When you know enough about them, create a SPECIFIC numbered plan like:
@@ -168,6 +169,7 @@ function buildConversationContext(user: any, history: Array<{role: string, conte
   let context = "## USER PROFILE:\n";
   if (user.name) context += `- Name: ${user.name}\n`;
   if (user.goals) context += `- Their stated goals: ${user.goals}\n`;
+  if (user.email) context += `- Email verified: ${user.email}\n`;
   context += `- Onboarding stage: ${user.onboarding_step}\n`;
   context += `- First contact: ${user.created_at}\n`;
   
@@ -194,9 +196,10 @@ function getOnboardingContext(user: any, userMessage: string, historyLength: num
   const goals = user.goals;
   const timezone = user.timezone;
   const checkInTime = user.preferred_check_in_time;
+  const email = user.email;
   
   // Post-onboarding: regular accountability conversations
-  if (historyLength > 0 && step >= 7) {
+  if (historyLength > 0 && step >= 8) {
     return `## TASK: This is an ongoing conversation with ${name || 'your user'}.
 Be their clingy, bossy accountability partner. Reference things from your conversation history.
 Echo back what they tell you. If they check in, ask specifics about their goals.
@@ -273,14 +276,24 @@ Create a numbered list like:
 
 4. [more based on their situation]
 
-does that timeline work? and what time do you want me to ping you in the morning?"
+does that timeline work?"
 
 Then ask: "would that be helpful or would me messaging that much be annoying to you?"`;
   }
   
-  // Step 7+: Ready for payment or ongoing accountability
-  if (step >= 7) {
-    return `## TASK: ${name} has agreed to a plan. If they haven't subscribed yet, it's time to mention payment.
+  // Step 7: Ask for email so we can remember them
+  if (step === 7 && !email) {
+    return `## TASK: ${name} agreed to the plan. Now ask for their email.
+Be casual: "ok sick we're locked in on the plan
+
+btw what's your email? that way i can actually remember you when you come back"
+
+Make it clear it's so you can save their progress and remember them.`;
+  }
+  
+  // Step 8+: Ready for payment or ongoing accountability
+  if (step >= 8) {
+    return `## TASK: ${name} has verified their email. If they haven't subscribed yet, it's time to mention payment.
 Be casual about it: "ok ${name} we're locked in\\n\\nTime to lock in fr fr. As much as I'd like to help you for free, it costs money for me to be alive and running lol"
 Otherwise, be their accountability partner. Reference their goals: ${goals}`;
   }
@@ -357,13 +370,15 @@ function getFallbackResponse(user: any, userMessage: string): string {
   if (user.onboarding_step === 2) {
     return "bet ok so if ur texting me it prob means you got some goals but aren't quite there yet\n\nso tell me what's going on";
   }
+  if (user.onboarding_step === 7 && !user.email) {
+    return "ok sick we're locked in on the plan\n\nbtw what's your email? that way i can actually remember you when you come back";
+  }
   return "yo text me what's going on\n\nor say 'check in' if u wanna update me on your goals";
 }
 
-// Get or create user by Supabase Auth userId (email-based auth)
-async function getOrCreateUser(userId: string, userEmail?: string, pushToken?: string) {
-  // Use auth user ID as the unique identifier stored in phone field
-  const phone = `auth_${userId}`;
+// Get or create user by device ID (anonymous-first for Apple compliance)
+async function getOrCreateUser(deviceId: string, pushToken?: string) {
+  const phone = deviceId; // Use deviceId as the unique identifier
   
   const { data: existingUser, error: fetchError } = await supabase
     .from('billie_users')
@@ -384,7 +399,7 @@ async function getOrCreateUser(userId: string, userEmail?: string, pushToken?: s
     return existingUser;
   }
 
-  console.log(`[DB] Creating new auth user: ${userEmail}`);
+  console.log(`[DB] Creating new anonymous user: ${deviceId.substring(0, 20)}...`);
   const { data: newUser, error: insertError } = await supabase
     .from('billie_users')
     .insert({ phone, onboarding_step: 0 })
@@ -413,7 +428,6 @@ async function updateUser(phone: string, updates: Record<string, any>) {
 
 function getPricingLink(billieUserId: string, phone: string): string {
   const baseUrl = "https://trybillie.app";
-  // Simple pricing link with user ID
   return `${baseUrl}/pricing?uid=${encodeURIComponent(billieUserId)}`;
 }
 
@@ -474,23 +488,25 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, message, userId, userEmail, pushToken, settings } = body;
+    const { action, message, deviceId, userId, userEmail, pushToken, settings, email } = body;
 
-    // Require authenticated user ID
-    if (!userId) {
-      return new Response(JSON.stringify({ error: 'User ID required' }), {
+    // Support both deviceId (anonymous) and userId (legacy auth)
+    const identifier = deviceId || (userId ? `auth_${userId}` : null);
+
+    if (!identifier) {
+      return new Response(JSON.stringify({ error: 'Device ID or User ID required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const phone = `auth_${userId}`;
+    const phone = identifier;
 
     // Handle load action - get existing conversation
     if (action === 'load') {
       const { data: user } = await supabase
         .from('billie_users')
-        .select('id, subscription_status, onboarding_step')
+        .select('id, subscription_status, onboarding_step, email')
         .eq('phone', phone)
         .maybeSingle();
 
@@ -504,7 +520,7 @@ serve(async (req) => {
       
       // Check if user just subscribed
       let justSubscribed = false;
-      if (user.subscription_status === 'active' && user.onboarding_step === 7 && history.length > 0) {
+      if (user.subscription_status === 'active' && user.onboarding_step === 8 && history.length > 0) {
         const lastBillieMsg = [...history].reverse().find(m => m.role === 'billie');
         if (lastBillieMsg && lastBillieMsg.content.includes('tap here to pick your plan')) {
           justSubscribed = true;
@@ -515,15 +531,18 @@ serve(async (req) => {
       }
 
       const messages = history.map(m => ({ role: m.role, content: m.content }));
+      
+      // Check if awaiting email verification
+      const awaitingEmail = user.onboarding_step === 7 && !user.email;
 
-      return new Response(JSON.stringify({ messages, justSubscribed }), {
+      return new Response(JSON.stringify({ messages, justSubscribed, awaitingEmail }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     // Handle start action - BILLIE initiates conversation
     if (action === 'start') {
-      const user = await getOrCreateUser(userId, userEmail, pushToken);
+      const user = await getOrCreateUser(identifier, pushToken);
       const history = await getConversationHistory(user.id);
 
       // If already has history, don't start again
@@ -542,11 +561,67 @@ serve(async (req) => {
       });
     }
 
+    // Handle set-pending-email action
+    if (action === 'set-pending-email') {
+      // Just acknowledge - email will be set when verified
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Handle verify-email action - called after OTP verification
+    if (action === 'verify-email') {
+      const { data: user } = await supabase
+        .from('billie_users')
+        .select('*')
+        .eq('phone', phone)
+        .maybeSingle();
+
+      if (!user) {
+        return new Response(JSON.stringify({ error: 'User not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update user with verified email and advance onboarding
+      await updateUser(phone, { 
+        email: email,
+        onboarding_step: 8 
+      });
+
+      const updatedUser = { ...user, email, onboarding_step: 8 };
+      const history = await getConversationHistory(user.id);
+
+      // Check if user needs to pay
+      if (!isUserSubscribed(updatedUser)) {
+        const paymentUrl = getPricingLink(user.id, phone);
+        const responseMessage = `verified ✓\n\nok ${user.name || 'friend'} we're locked in now\n\ntime to lock in fr fr 🔒\n\nas much as id like to help you for free, it costs money for me to be alive and running lol\n\nwe got monthly ($9.99) or annual ($79.99 which saves you like $40)\n\ntap here to pick your plan: ${paymentUrl}`;
+        
+        await saveMessage(user.id, 'billie', responseMessage);
+        
+        return new Response(JSON.stringify({ 
+          response: responseMessage,
+          paymentUrl,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // User already subscribed
+      const responseMessage = "verified ✓\n\nok now i can actually remember you when you come back\n\nwhat's on the agenda for today?";
+      await saveMessage(user.id, 'billie', responseMessage);
+
+      return new Response(JSON.stringify({ response: responseMessage }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Handle get-settings action
     if (action === 'get-settings') {
       const { data: user } = await supabase
         .from('billie_users')
-        .select('name, preferred_check_in_time, timezone, subscription_status, current_streak, longest_streak')
+        .select('name, preferred_check_in_time, timezone, subscription_status, current_streak, longest_streak, email')
         .eq('phone', phone)
         .maybeSingle();
 
@@ -605,9 +680,9 @@ serve(async (req) => {
       });
     }
 
-    console.log(`[App] Processing message for auth user`);
+    console.log(`[App] Processing message for device`);
 
-    const user = await getOrCreateUser(userId, userEmail, pushToken);
+    const user = await getOrCreateUser(identifier, pushToken);
     const conversationHistory = await getConversationHistory(user.id);
 
     // Save user message
@@ -616,6 +691,7 @@ serve(async (req) => {
     // Determine state transitions
     let updates: Record<string, any> = {};
     let justCompletedOnboarding = false;
+    let awaitingEmail = false;
     const normalizedMessage = message.toLowerCase().trim();
 
     if (user.onboarding_step === 0 && !user.name) {
@@ -652,12 +728,12 @@ serve(async (req) => {
       const agreementWords = ['yes', 'yeah', 'yep', 'sounds good', 'perfect', 'bet', 'fire', 'love it', 'let\'s do it', 'down', 'i\'m in', 'that works'];
       if (agreementWords.some(w => normalizedMessage.includes(w))) {
         updates.onboarding_step = 7;
-        justCompletedOnboarding = true;
+        awaitingEmail = true; // Signal frontend to collect email
       }
     }
 
-    // Handle check-in flow
-    if (user.onboarding_step >= 7) {
+    // Handle check-in flow (post-onboarding)
+    if (user.onboarding_step >= 8) {
       if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
         updates.awaiting_check_in = true;
       } else if (user.awaiting_check_in) {
@@ -676,20 +752,16 @@ serve(async (req) => {
     const updatedUser = { ...user, ...updates };
     let responseMessage = await generateBillieResponse(message, updatedUser, conversationHistory);
 
-    // Payment wall after onboarding
-    let paymentUrl = null;
-    if (justCompletedOnboarding && !isUserSubscribed(updatedUser)) {
-      console.log('[App] User completed onboarding, showing payment');
-      paymentUrl = getPricingLink(user.id, phone);
-      
-      responseMessage = `time to lock in fr fr 🔒\n\nas much as id like to help you for free, it costs money for me to be alive and running lol 💀\n\nwe got monthly ($9.99) or annual ($79.99 which saves you like $40)\n\ntap here to pick your plan: ${paymentUrl}\n\nonce you do i'll start notifying you daily and actually hold you accountable`;
+    // If step 7 (ask for email), add prompt
+    if (updatedUser.onboarding_step === 7 && !updatedUser.email && !awaitingEmail) {
+      awaitingEmail = true;
     }
 
     await saveMessage(user.id, 'billie', responseMessage);
 
     return new Response(JSON.stringify({ 
       response: responseMessage,
-      paymentUrl,
+      awaitingEmail,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
