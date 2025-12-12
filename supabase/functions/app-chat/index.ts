@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -426,9 +427,29 @@ async function updateUser(phone: string, updates: Record<string, any>) {
   }
 }
 
+function generateSignedToken(userId: string, phone: string): string {
+  const tokenSecret = Deno.env.get('TWILIO_AUTH_TOKEN');
+  if (!tokenSecret) {
+    console.error('[Token] TWILIO_AUTH_TOKEN not configured');
+    return '';
+  }
+  
+  // Token expires in 1 hour
+  const expiresAt = Date.now() + (60 * 60 * 1000);
+  const payload = `${userId}:${phone}:${expiresAt}`;
+  
+  const hmac = createHmac("sha256", tokenSecret);
+  hmac.update(payload);
+  const signature = hmac.digest("hex");
+  
+  const token = btoa(`${userId}:${phone}:${expiresAt}:${signature}`);
+  return token;
+}
+
 function getPricingLink(billieUserId: string, phone: string): string {
   const baseUrl = "https://trybillie.app";
-  return `${baseUrl}/pricing?uid=${encodeURIComponent(billieUserId)}`;
+  const token = generateSignedToken(billieUserId, phone);
+  return `${baseUrl}/pricing?token=${encodeURIComponent(token)}`;
 }
 
 function isUserSubscribed(user: any): boolean {
