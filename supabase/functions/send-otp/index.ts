@@ -59,7 +59,7 @@ serve(async (req) => {
 
       // Send email via Resend
       const { error: emailError } = await resend.emails.send({
-        from: "BILLIE <onboarding@resend.dev>",
+        from: "BILLIE <noreply@trybillie.app>",
         to: [normalizedEmail],
         subject: "Your BILLIE login code",
         html: `
