@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,15 +10,6 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-
-// Secret for signing device tokens - use existing secret
-const TOKEN_SECRET: string = (() => {
-  const secret = Deno.env.get('TWILIO_AUTH_TOKEN');
-  if (!secret) {
-    throw new Error('TOKEN_SECRET (TWILIO_AUTH_TOKEN) not configured');
-  }
-  return secret;
-})();
 
 // BILLIE's complete personality - blunt, real, minimal emojis
 const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a blunt Gen Z accountability partner who texts like a real person.
@@ -84,56 +74,6 @@ you gotta delete it off your phone or at least log out so there's friction when 
 
 You're BILLIE - direct, helpful, not a cheerleader. Talk like a real friend who actually wants to help, not a motivational chatbot.`;
 
-// ============ SECURE DEVICE TOKEN SYSTEM ============
-
-// Generate a secure device token (called when creating new user)
-function generateDeviceToken(deviceId: string): string {
-  const timestamp = Date.now();
-  const payload = `${deviceId}:${timestamp}`;
-  
-  const hmac = createHmac("sha256", TOKEN_SECRET);
-  hmac.update(payload);
-  const signature = hmac.digest("hex");
-  
-  // Return base64 encoded token: deviceId:timestamp:signature
-  return btoa(`${payload}:${signature}`);
-}
-
-// Verify a device token is valid
-function verifyDeviceToken(token: string, deviceId: string): { valid: boolean; error?: string } {
-  try {
-    const decoded = atob(token);
-    const parts = decoded.split(':');
-    
-    if (parts.length !== 3) {
-      return { valid: false, error: 'Invalid token format' };
-    }
-    
-    const [tokenDeviceId, timestamp, signature] = parts;
-    
-    // Verify device ID matches
-    if (tokenDeviceId !== deviceId) {
-      return { valid: false, error: 'Device ID mismatch' };
-    }
-    
-    // Verify signature
-    const payload = `${tokenDeviceId}:${timestamp}`;
-    const hmac = createHmac("sha256", TOKEN_SECRET);
-    hmac.update(payload);
-    const expectedSignature = hmac.digest("hex");
-    
-    if (signature !== expectedSignature) {
-      return { valid: false, error: 'Invalid signature' };
-    }
-    
-    // Token is valid (no expiration for device tokens - they're permanent per device)
-    return { valid: true };
-  } catch {
-    return { valid: false, error: 'Token decode failed' };
-  }
-}
-
-// ============ END SECURE TOKEN SYSTEM ============
 
 // Security helpers
 function sanitizeInput(input: string, maxLength: number = 500): string {
@@ -420,9 +360,10 @@ function getFallbackResponse(user: any, userMessage: string): string {
   return "yo text me what's going on\n\nor say 'check in' if u wanna update me on your goals";
 }
 
-async function getOrCreateUser(deviceId: string, pushToken?: string) {
-  // Use device ID as phone (unique identifier for app users)
-  const phone = `app_${deviceId}`;
+// Get or create user by Supabase Auth userId (email-based auth)
+async function getOrCreateUser(userId: string, userEmail?: string, pushToken?: string) {
+  // Use auth user ID as the unique identifier stored in phone field
+  const phone = `auth_${userId}`;
   
   const { data: existingUser, error: fetchError } = await supabase
     .from('billie_users')
@@ -443,7 +384,7 @@ async function getOrCreateUser(deviceId: string, pushToken?: string) {
     return existingUser;
   }
 
-  console.log(`[DB] Creating new app user`);
+  console.log(`[DB] Creating new auth user: ${userEmail}`);
   const { data: newUser, error: insertError } = await supabase
     .from('billie_users')
     .insert({ phone, onboarding_step: 0 })
@@ -470,19 +411,10 @@ async function updateUser(phone: string, updates: Record<string, any>) {
   }
 }
 
-function getPricingLink(userId: string, phone: string): string {
+function getPricingLink(billieUserId: string, phone: string): string {
   const baseUrl = "https://trybillie.app";
-  const tokenSecret = Deno.env.get('TWILIO_AUTH_TOKEN') || 'app-secret';
-  
-  const expiresAt = Date.now() + (24 * 60 * 60 * 1000);
-  const payload = `${userId}:${phone}:${expiresAt}`;
-  
-  const hmac = createHmac("sha256", tokenSecret);
-  hmac.update(payload);
-  const signature = hmac.digest("hex");
-  
-  const token = btoa(`${payload}:${signature}`);
-  return `${baseUrl}/pricing?token=${encodeURIComponent(token)}`;
+  // Simple pricing link with user ID
+  return `${baseUrl}/pricing?uid=${encodeURIComponent(billieUserId)}`;
 }
 
 function isUserSubscribed(user: any): boolean {
@@ -542,16 +474,17 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, message, deviceId, deviceToken, pushToken, settings } = body;
+    const { action, message, userId, userEmail, pushToken, settings } = body;
 
-    if (!deviceId) {
-      return new Response(JSON.stringify({ error: 'Device ID required' }), {
+    // Require authenticated user ID
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'User ID required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const phone = `app_${deviceId}`;
+    const phone = `auth_${userId}`;
 
     // Handle load action - get existing conversation
     if (action === 'load') {
@@ -569,16 +502,14 @@ serve(async (req) => {
 
       const history = await getConversationHistory(user.id);
       
-      // Check if user just subscribed (completed onboarding + has active subscription + last message was payment prompt)
+      // Check if user just subscribed
       let justSubscribed = false;
       if (user.subscription_status === 'active' && user.onboarding_step === 7 && history.length > 0) {
         const lastBillieMsg = [...history].reverse().find(m => m.role === 'billie');
         if (lastBillieMsg && lastBillieMsg.content.includes('tap here to pick your plan')) {
           justSubscribed = true;
-          // Save welcome message automatically so it doesn't trigger again
           const welcomeMsg = "ayyy you're locked in now 🔒\n\nlet's get this started fr. i'll hit you up at your check-in times and make sure you're actually doing what you said you'd do\n\nwhat's on the agenda for today?";
           await saveMessage(user.id, 'billie', welcomeMsg);
-          // Add to history for response
           history.push({ role: 'billie', content: welcomeMsg, created_at: new Date().toISOString() });
         }
       }
@@ -590,55 +521,26 @@ serve(async (req) => {
       });
     }
 
-    // Handle start action - BILLIE initiates conversation (creates new user + token)
+    // Handle start action - BILLIE initiates conversation
     if (action === 'start') {
-      const user = await getOrCreateUser(deviceId, pushToken);
+      const user = await getOrCreateUser(userId, userEmail, pushToken);
       const history = await getConversationHistory(user.id);
 
-      // If already has history, don't start again but return token for existing user
+      // If already has history, don't start again
       if (history.length > 0) {
-        // Generate new token for existing user (allows them to continue)
-        const newToken = generateDeviceToken(deviceId);
-        return new Response(JSON.stringify({ response: null, deviceToken: newToken }), {
+        return new Response(JSON.stringify({ response: null }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-
-      // Generate secure device token for new user
-      const newDeviceToken = generateDeviceToken(deviceId);
 
       // Generate BILLIE's opening message
       const openingMessage = await generateBillieResponse("", user, []);
       await saveMessage(user.id, 'billie', openingMessage);
 
-      return new Response(JSON.stringify({ 
-        response: openingMessage,
-        deviceToken: newDeviceToken 
-      }), {
+      return new Response(JSON.stringify({ response: openingMessage }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    // ============ VERIFY TOKEN FOR SENSITIVE OPERATIONS ============
-    // All operations below require a valid device token
-    
-    if (!deviceToken) {
-      return new Response(JSON.stringify({ error: 'Authentication required', code: 'TOKEN_REQUIRED' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const tokenVerification = verifyDeviceToken(deviceToken, deviceId);
-    if (!tokenVerification.valid) {
-      console.log(`[Auth] Token verification failed: ${tokenVerification.error}`);
-      return new Response(JSON.stringify({ error: 'Invalid authentication', code: 'INVALID_TOKEN' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // ============ END TOKEN VERIFICATION ============
 
     // Handle get-settings action
     if (action === 'get-settings') {
@@ -669,7 +571,7 @@ serve(async (req) => {
           .from('billie_users')
           .update({ push_token: token })
           .eq('phone', phone);
-        console.log(`[Push] Saved token for device`);
+        console.log(`[Push] Saved token for user`);
       }
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -703,9 +605,9 @@ serve(async (req) => {
       });
     }
 
-    console.log(`[App] Processing authenticated message`);
+    console.log(`[App] Processing message for auth user`);
 
-    const user = await getOrCreateUser(deviceId, pushToken);
+    const user = await getOrCreateUser(userId, userEmail, pushToken);
     const conversationHistory = await getConversationHistory(user.id);
 
     // Save user message
@@ -722,10 +624,8 @@ serve(async (req) => {
         updates.onboarding_step = 1;
       }
     } else if (user.onboarding_step === 1) {
-      // They told us their age
       updates.onboarding_step = 2;
     } else if (user.onboarding_step === 2) {
-      // They shared their goals/situation
       if (looksLikeGoals(message)) {
         updates.goals = sanitizeInput(message, 1000);
         updates.onboarding_step = 3;
@@ -735,16 +635,12 @@ serve(async (req) => {
         }
       }
     } else if (user.onboarding_step === 3) {
-      // They answered follow-up questions about blockers - continue digging
       updates.onboarding_step = 4;
     } else if (user.onboarding_step === 4) {
-      // They shared more about their situation - ask for timezone
       updates.onboarding_step = 5;
     } else if (user.onboarding_step === 5) {
-      // Check if they gave timezone info
       const timezonePatterns = /\b(pst|est|cst|mst|pt|et|ct|mt|pacific|eastern|central|mountain|gmt|utc|timezone|time zone|\d{1,2}\s*(am|pm)|morning|afternoon|evening)\b/i;
       if (timezonePatterns.test(normalizedMessage)) {
-        // Try to extract timezone
         const tzMatch = normalizedMessage.match(/(pst|pacific)/i) ? 'PST' :
                         normalizedMessage.match(/(est|eastern)/i) ? 'EST' :
                         normalizedMessage.match(/(cst|central)/i) ? 'CST' :
@@ -753,7 +649,6 @@ serve(async (req) => {
         updates.onboarding_step = 6;
       }
     } else if (user.onboarding_step === 6) {
-      // They've seen the personalized plan - check if they agreed
       const agreementWords = ['yes', 'yeah', 'yep', 'sounds good', 'perfect', 'bet', 'fire', 'love it', 'let\'s do it', 'down', 'i\'m in', 'that works'];
       if (agreementWords.some(w => normalizedMessage.includes(w))) {
         updates.onboarding_step = 7;
@@ -761,7 +656,7 @@ serve(async (req) => {
       }
     }
 
-    // Handle check-in flow (only after onboarding complete)
+    // Handle check-in flow
     if (user.onboarding_step >= 7) {
       if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
         updates.awaiting_check_in = true;
@@ -781,7 +676,7 @@ serve(async (req) => {
     const updatedUser = { ...user, ...updates };
     let responseMessage = await generateBillieResponse(message, updatedUser, conversationHistory);
 
-    // Payment wall after onboarding - PLAYFUL VERSION
+    // Payment wall after onboarding
     let paymentUrl = null;
     if (justCompletedOnboarding && !isUserSubscribed(updatedUser)) {
       console.log('[App] User completed onboarding, showing payment');

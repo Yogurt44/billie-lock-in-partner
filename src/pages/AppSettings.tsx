@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Bell, Clock, Trash2, Sun, Moon, Monitor } from "lucide-react";
+import { ArrowLeft, Bell, Clock, Trash2, Sun, Moon, Monitor, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Select,
   SelectContent,
@@ -14,16 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-// Generate or get device ID
-function getDeviceId(): string {
-  let deviceId = localStorage.getItem("billie-device-id");
-  if (!deviceId) {
-    deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-    localStorage.setItem("billie-device-id", deviceId);
-  }
-  return deviceId;
-}
 
 const timezones = [
   { value: "America/New_York", label: "Eastern Time (ET)" },
@@ -38,6 +29,7 @@ const timezones = [
 export default function AppSettings() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
+  const { user, signOut } = useAuth();
   const [checkInTime, setCheckInTime] = useState("09:00");
   const [timezone, setTimezone] = useState("America/New_York");
   const [isLoading, setIsLoading] = useState(false);
@@ -49,14 +41,16 @@ export default function AppSettings() {
   } | null>(null);
 
   useEffect(() => {
-    loadSettings();
-  }, []);
+    if (user?.id) {
+      loadSettings();
+    }
+  }, [user?.id]);
 
   const loadSettings = async () => {
+    if (!user?.id) return;
     try {
-      const deviceId = getDeviceId();
       const { data, error } = await supabase.functions.invoke("app-chat", {
-        body: { action: "get-settings", deviceId },
+        body: { action: "get-settings", userId: user.id, userEmail: user.email },
       });
 
       if (error) throw error;
@@ -77,13 +71,14 @@ export default function AppSettings() {
   };
 
   const saveSettings = async () => {
+    if (!user?.id) return;
     setIsLoading(true);
     try {
-      const deviceId = getDeviceId();
       const { error } = await supabase.functions.invoke("app-chat", {
         body: {
           action: "save-settings",
-          deviceId,
+          userId: user.id,
+          userEmail: user.email,
           settings: {
             preferred_check_in_time: checkInTime,
             timezone,
@@ -102,22 +97,26 @@ export default function AppSettings() {
   };
 
   const resetConversation = async () => {
+    if (!user?.id) return;
     if (!confirm("This will delete all your conversation history. Are you sure?")) {
       return;
     }
 
     try {
-      const deviceId = getDeviceId();
       await supabase.functions.invoke("app-chat", {
-        body: { action: "reset", deviceId },
+        body: { action: "reset", userId: user.id, userEmail: user.email },
       });
-      localStorage.removeItem("billie-device-id");
       toast.success("Conversation reset! Starting fresh.");
       navigate("/app");
     } catch (error) {
       console.error("Error resetting:", error);
       toast.error("Failed to reset");
     }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/app/auth");
   };
 
   return (
@@ -144,8 +143,8 @@ export default function AppSettings() {
             <h2 className="font-medium mb-3">Your Stats</h2>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-muted-foreground">Name</p>
-                <p className="font-medium">{userInfo.name || "Not set"}</p>
+                <p className="text-muted-foreground">Email</p>
+                <p className="font-medium truncate">{user?.email || "Not set"}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Status</p>
@@ -253,8 +252,16 @@ export default function AppSettings() {
         </Button>
 
         {/* Danger Zone */}
-        <div className="pt-8 border-t border-border/50">
-          <h3 className="text-sm font-medium text-destructive mb-3">Danger Zone</h3>
+        <div className="pt-8 border-t border-border/50 space-y-4">
+          <h3 className="text-sm font-medium text-destructive mb-3">Account</h3>
+          <Button
+            variant="outline"
+            onClick={handleSignOut}
+            className="w-full"
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </Button>
           <Button
             variant="outline"
             onClick={resetConversation}
@@ -263,8 +270,8 @@ export default function AppSettings() {
             <Trash2 className="h-4 w-4 mr-2" />
             Reset All Data
           </Button>
-          <p className="text-xs text-muted-foreground mt-2">
-            This will delete your conversation history and start fresh
+          <p className="text-xs text-muted-foreground">
+            Reset will delete your conversation history and start fresh
           </p>
         </div>
       </div>
