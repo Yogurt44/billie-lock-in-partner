@@ -116,10 +116,18 @@ export default function AppSettings() {
     try {
       const deviceId = localStorage.getItem("billie_device_id");
       const { error } = await supabase.functions.invoke("app-chat", {
-        body: { action: "reset", deviceId: deviceId || `auth_${user.id}`, userEmail: user.email },
+        body: { 
+          action: "reset", 
+          phone: deviceId || `auth_${user.id}`, 
+          userEmail: user.email 
+        },
       });
       
       if (error) throw error;
+      
+      // Clear local messages cache
+      localStorage.removeItem("billie_messages");
+      
       toast.success("Conversation reset! Starting fresh.");
       navigate("/app");
     } catch (error) {
