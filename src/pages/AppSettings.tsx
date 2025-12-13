@@ -212,7 +212,7 @@ export default function AppSettings() {
             <Sun className="h-4 w-4 text-muted-foreground" />
             <Label>Appearance</Label>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Button
               variant={theme === "light" ? "default" : "outline"}
               size="sm"
@@ -231,63 +231,8 @@ export default function AppSettings() {
               <Moon className="h-4 w-4" />
               Dark
             </Button>
-            <Button
-              variant={theme === "system" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setTheme("system")}
-              className="flex items-center gap-2"
-            >
-              <Monitor className="h-4 w-4" />
-              Auto
-            </Button>
           </div>
         </div>
-
-        {/* Check-in Time */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />
-            <Label>Daily Check-in Time</Label>
-          </div>
-          <Input
-            type="time"
-            value={checkInTime}
-            onChange={(e) => setCheckInTime(e.target.value)}
-            className="w-full"
-          />
-          <p className="text-xs text-muted-foreground">
-            BILLIE will send you a notification at this time every day
-          </p>
-        </div>
-
-        {/* Timezone */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Bell className="h-4 w-4 text-muted-foreground" />
-            <Label>Timezone</Label>
-          </div>
-          <Select value={timezone} onValueChange={setTimezone}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select timezone" />
-            </SelectTrigger>
-            <SelectContent>
-              {timezones.map((tz) => (
-                <SelectItem key={tz.value} value={tz.value}>
-                  {tz.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Save Button */}
-        <Button
-          onClick={saveSettings}
-          disabled={isLoading}
-          className="w-full"
-        >
-          {isLoading ? "Saving..." : "Save Settings"}
-        </Button>
 
         {/* Legal Links - Required by App Store */}
         <div className="pt-6 border-t border-border/50 space-y-3">

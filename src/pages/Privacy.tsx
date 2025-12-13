@@ -24,7 +24,6 @@ const Privacy = () => {
       
       <div className="py-8 px-4 max-w-3xl mx-auto">
         <p className="text-muted-foreground mb-8">Last updated: December 13, 2025</p>
-        <p className="text-muted-foreground mb-8">Last updated: December 13, 2025</p>
 
         <section className="mb-8">
           <h2 className="text-2xl font-semibold mb-4">1. Information We Collect</h2>
@@ -123,8 +122,7 @@ const Privacy = () => {
           <h2 className="text-2xl font-semibold mb-4">9. Contact Us</h2>
           <p className="text-muted-foreground">
             Privacy questions or data requests? Contact us at:<br />
-            <strong>Email:</strong> contact@trybillie.app<br />
-            <strong>Developer:</strong> HADEA LLC
+            <strong>Email:</strong> contact@trybillie.app
           </p>
         </section>
       </div>
