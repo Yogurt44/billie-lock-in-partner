@@ -375,7 +375,7 @@ export default function AppSettings() {
         {/* App Version */}
         <div className="pt-6 text-center">
           <p className="text-xs text-muted-foreground">
-            BILLIE v1.0.0 • Made by HADEA LLC
+            BILLIE v1.0.0
           </p>
         </div>
       </div>
