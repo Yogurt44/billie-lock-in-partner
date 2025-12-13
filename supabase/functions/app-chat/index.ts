@@ -674,7 +674,7 @@ serve(async (req) => {
       });
     }
 
-    // Handle reset action
+    // Handle reset action (just resets conversation history)
     if (action === 'reset') {
       const { data: user } = await supabase
         .from('billie_users')
@@ -685,10 +685,86 @@ serve(async (req) => {
       if (user) {
         await supabase.from('billie_messages').delete().eq('user_id', user.id);
         await supabase.from('billie_goals').delete().eq('user_id', user.id);
-        await supabase.from('billie_users').delete().eq('phone', phone);
+        await supabase.from('billie_users').update({ 
+          onboarding_step: 0, 
+          name: null, 
+          goals: null 
+        }).eq('phone', phone);
       }
 
       return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Handle delete-account action (REQUIRED by Apple App Store Guideline 5.1.1(v))
+    if (action === 'delete-account') {
+      console.log('[Account] Processing account deletion request');
+      
+      const { data: user } = await supabase
+        .from('billie_users')
+        .select('id, stripe_customer_id, email')
+        .eq('phone', phone)
+        .maybeSingle();
+
+      if (user) {
+        // Delete all user data
+        await supabase.from('billie_messages').delete().eq('user_id', user.id);
+        await supabase.from('billie_goals').delete().eq('user_id', user.id);
+        await supabase.from('billie_photo_proofs').delete().eq('user_id', user.id);
+        
+        // Delete OTP codes for this user's email
+        if (user.email) {
+          await supabase.from('email_otp_codes').delete().eq('email', user.email);
+        }
+        
+        // Cancel Stripe subscription if exists
+        if (user.stripe_customer_id) {
+          try {
+            const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+            if (stripeSecretKey) {
+              // List active subscriptions for customer
+              const subsResponse = await fetch(
+                `https://api.stripe.com/v1/customers/${user.stripe_customer_id}/subscriptions`,
+                {
+                  method: 'GET',
+                  headers: {
+                    'Authorization': `Bearer ${stripeSecretKey}`,
+                  },
+                }
+              );
+              
+              if (subsResponse.ok) {
+                const subsData = await subsResponse.json();
+                // Cancel each active subscription
+                for (const sub of subsData.data || []) {
+                  if (sub.status === 'active' || sub.status === 'trialing') {
+                    await fetch(
+                      `https://api.stripe.com/v1/subscriptions/${sub.id}`,
+                      {
+                        method: 'DELETE',
+                        headers: {
+                          'Authorization': `Bearer ${stripeSecretKey}`,
+                        },
+                      }
+                    );
+                    console.log(`[Account] Cancelled subscription ${sub.id}`);
+                  }
+                }
+              }
+            }
+          } catch (stripeError) {
+            console.error('[Account] Error cancelling Stripe subscription:', stripeError);
+            // Continue with deletion even if Stripe fails
+          }
+        }
+        
+        // Delete user record
+        await supabase.from('billie_users').delete().eq('phone', phone);
+        console.log(`[Account] Deleted user data for ${user.email || phone}`);
+      }
+
+      return new Response(JSON.stringify({ success: true, message: 'Account deleted' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
