@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import * as jose from "https://deno.land/x/jose@v4.14.4/index.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -260,17 +261,15 @@ serve(async (req) => {
   }
 });
 
-// Send push notification - supports both Expo and APNs/FCM tokens
+// Send push notification - supports both Expo and APNs tokens
 async function sendPushNotification(token: string, message: string) {
   // Expo push tokens start with "ExponentPushToken"
   if (token.startsWith("ExponentPushToken")) {
     return sendExpoPush(token, message);
   }
   
-  // For Capacitor iOS (APNs) - we need FCM to relay
-  // APNs tokens from Capacitor are typically hex strings or base64
-  // We'll use FCM HTTP v1 API which can send to both iOS and Android
-  return sendFCMPush(token, message);
+  // For Capacitor iOS - send directly to APNs
+  return sendAPNsPush(token, message);
 }
 
 async function sendExpoPush(token: string, message: string) {
@@ -298,40 +297,111 @@ async function sendExpoPush(token: string, message: string) {
   console.log("[CRON] Expo push sent successfully");
 }
 
-async function sendFCMPush(token: string, message: string) {
-  const fcmServerKey = Deno.env.get("FCM_SERVER_KEY");
+// Generate JWT for APNs authentication
+async function generateAPNsJWT(): Promise<string> {
+  const keyId = Deno.env.get("APNS_KEY_ID");
+  const teamId = Deno.env.get("APNS_TEAM_ID");
+  const privateKeyPem = Deno.env.get("APNS_PRIVATE_KEY");
   
-  if (!fcmServerKey) {
-    console.log("[CRON] FCM_SERVER_KEY not configured, using APNs direct");
-    // For now, log that we would send - user needs to configure FCM
-    console.log(`[CRON] Would send to APNs token: ${token.substring(0, 20)}... message: ${message}`);
+  if (!keyId || !teamId || !privateKeyPem) {
+    throw new Error("APNs credentials not configured");
+  }
+  
+  // Import the private key
+  const privateKey = await jose.importPKCS8(privateKeyPem, "ES256");
+  
+  // Create the JWT
+  const jwt = await new jose.SignJWT({})
+    .setProtectedHeader({ alg: "ES256", kid: keyId })
+    .setIssuer(teamId)
+    .setIssuedAt()
+    .sign(privateKey);
+  
+  return jwt;
+}
+
+async function sendAPNsPush(deviceToken: string, message: string) {
+  const apnsKeyId = Deno.env.get("APNS_KEY_ID");
+  
+  if (!apnsKeyId) {
+    console.log("[CRON] APNs not configured, skipping push");
+    console.log(`[CRON] Would send to device: ${deviceToken.substring(0, 20)}... message: ${message}`);
     return;
   }
-
-  const response = await fetch("https://fcm.googleapis.com/fcm/send", {
-    method: "POST",
-    headers: {
-      "Authorization": `key=${fcmServerKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      to: token,
-      notification: {
-        title: "BILLIE",
-        body: message,
-        sound: "default",
+  
+  try {
+    const jwt = await generateAPNsJWT();
+    const bundleId = "app.lovable.fdad419e585e47a5a821647690fccb2e"; // Your app bundle ID
+    
+    // Use production APNs server (api.push.apple.com for production, api.sandbox.push.apple.com for development)
+    const apnsHost = "api.push.apple.com";
+    
+    const response = await fetch(`https://${apnsHost}/3/device/${deviceToken}`, {
+      method: "POST",
+      headers: {
+        "authorization": `bearer ${jwt}`,
+        "apns-topic": bundleId,
+        "apns-push-type": "alert",
+        "apns-priority": "10",
+        "apns-expiration": "0",
       },
-      data: {
+      body: JSON.stringify({
+        aps: {
+          alert: {
+            title: "BILLIE",
+            body: message,
+          },
+          sound: "default",
+          badge: 1,
+        },
         screen: "chat",
-      },
-    }),
-  });
+      }),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("[CRON] FCM push error:", errorText);
-    throw new Error(`FCM push failed: ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[CRON] APNs push error:", response.status, errorText);
+      
+      // If production fails, try sandbox (for TestFlight/development)
+      if (response.status === 400 || response.status === 410) {
+        console.log("[CRON] Trying APNs sandbox...");
+        const sandboxResponse = await fetch(`https://api.sandbox.push.apple.com/3/device/${deviceToken}`, {
+          method: "POST",
+          headers: {
+            "authorization": `bearer ${jwt}`,
+            "apns-topic": bundleId,
+            "apns-push-type": "alert",
+            "apns-priority": "10",
+            "apns-expiration": "0",
+          },
+          body: JSON.stringify({
+            aps: {
+              alert: {
+                title: "BILLIE",
+                body: message,
+              },
+              sound: "default",
+              badge: 1,
+            },
+            screen: "chat",
+          }),
+        });
+        
+        if (!sandboxResponse.ok) {
+          const sandboxError = await sandboxResponse.text();
+          console.error("[CRON] APNs sandbox error:", sandboxResponse.status, sandboxError);
+          throw new Error(`APNs push failed: ${sandboxError}`);
+        }
+        console.log("[CRON] APNs sandbox push sent successfully");
+        return;
+      }
+      
+      throw new Error(`APNs push failed: ${errorText}`);
+    }
+
+    console.log("[CRON] APNs push sent successfully");
+  } catch (error) {
+    console.error("[CRON] APNs push error:", error);
+    throw error;
   }
-
-  console.log("[CRON] FCM push sent successfully");
 }
