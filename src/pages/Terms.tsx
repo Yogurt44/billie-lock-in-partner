@@ -1,8 +1,28 @@
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+
 const Terms = () => {
+  const navigate = useNavigate();
+  
   return (
-    <div className="min-h-screen bg-background text-foreground py-16 px-4">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-4xl font-bold mb-8">Terms of Service</h1>
+    <div className="min-h-screen bg-background text-foreground">
+      {/* Header with back button */}
+      <header className="bg-card/80 backdrop-blur-xl border-b border-border/30 sticky top-0 z-10 safe-area-top">
+        <div className="px-4 py-3 flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate(-1)}
+            className="h-8 w-8"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="font-semibold text-lg">Terms of Service</h1>
+        </div>
+      </header>
+      
+      <div className="py-8 px-4 max-w-3xl mx-auto">
         <p className="text-muted-foreground mb-8">Last updated: December 13, 2025</p>
 
         <section className="mb-8">
