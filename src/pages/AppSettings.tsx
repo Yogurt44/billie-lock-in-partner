@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Bell, Clock, Trash2, Sun, Moon, Monitor, LogOut } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Bell, Clock, Trash2, Sun, Moon, Monitor, LogOut, FileText, Shield, ExternalLink } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
@@ -15,6 +15,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const timezones = [
   { value: "America/New_York", label: "Eastern Time (ET)" },
@@ -33,6 +44,7 @@ export default function AppSettings() {
   const [checkInTime, setCheckInTime] = useState("09:00");
   const [timezone, setTimezone] = useState("America/New_York");
   const [isLoading, setIsLoading] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [userInfo, setUserInfo] = useState<{
     name: string | null;
     subscription_status: string | null;
@@ -111,6 +123,32 @@ export default function AppSettings() {
     } catch (error) {
       console.error("Error resetting:", error);
       toast.error("Failed to reset");
+    }
+  };
+
+  const deleteAccount = async () => {
+    if (!user?.id || !user?.email) return;
+    setIsDeletingAccount(true);
+    
+    try {
+      const { error } = await supabase.functions.invoke("app-chat", {
+        body: { 
+          action: "delete-account", 
+          userId: user.id, 
+          userEmail: user.email 
+        },
+      });
+
+      if (error) throw error;
+      
+      toast.success("Account deleted successfully");
+      await signOut();
+      navigate("/");
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      toast.error("Failed to delete account. Please contact contact@trybillie.app");
+    } finally {
+      setIsDeletingAccount(false);
     }
   };
 
@@ -251,9 +289,28 @@ export default function AppSettings() {
           {isLoading ? "Saving..." : "Save Settings"}
         </Button>
 
-        {/* Danger Zone */}
-        <div className="pt-8 border-t border-border/50 space-y-4">
-          <h3 className="text-sm font-medium text-destructive mb-3">Account</h3>
+        {/* Legal Links - Required by App Store */}
+        <div className="pt-6 border-t border-border/50 space-y-3">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3">Legal</h3>
+          <Link to="/privacy" className="flex items-center justify-between p-3 bg-card rounded-lg border border-border/50 hover:bg-accent transition-colors">
+            <div className="flex items-center gap-3">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <span>Privacy Policy</span>
+            </div>
+            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+          </Link>
+          <Link to="/terms" className="flex items-center justify-between p-3 bg-card rounded-lg border border-border/50 hover:bg-accent transition-colors">
+            <div className="flex items-center gap-3">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <span>Terms of Service</span>
+            </div>
+            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+          </Link>
+        </div>
+
+        {/* Account Actions */}
+        <div className="pt-6 border-t border-border/50 space-y-4">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3">Account</h3>
           <Button
             variant="outline"
             onClick={handleSignOut}
@@ -265,13 +322,60 @@ export default function AppSettings() {
           <Button
             variant="outline"
             onClick={resetConversation}
-            className="w-full text-destructive border-destructive/50 hover:bg-destructive/10"
+            className="w-full"
           >
             <Trash2 className="h-4 w-4 mr-2" />
-            Reset All Data
+            Reset Conversation History
           </Button>
+        </div>
+
+        {/* Danger Zone - Account Deletion (Required by App Store 5.1.1(v)) */}
+        <div className="pt-6 border-t border-destructive/30 space-y-4">
+          <h3 className="text-sm font-medium text-destructive mb-3">Danger Zone</h3>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-full text-destructive border-destructive/50 hover:bg-destructive/10"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Account
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+                <AlertDialogDescription className="space-y-2">
+                  <p>This action cannot be undone. This will permanently:</p>
+                  <ul className="list-disc list-inside space-y-1 mt-2">
+                    <li>Delete your account and all personal data</li>
+                    <li>Erase your entire conversation history</li>
+                    <li>Remove all your goals and streak data</li>
+                    <li>Cancel any active subscription</li>
+                  </ul>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={deleteAccount}
+                  disabled={isDeletingAccount}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isDeletingAccount ? "Deleting..." : "Delete Account"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <p className="text-xs text-muted-foreground">
-            Reset will delete your conversation history and start fresh
+            Your data will be permanently deleted within 30 days. Any active subscription will be cancelled.
+          </p>
+        </div>
+
+        {/* App Version */}
+        <div className="pt-6 text-center">
+          <p className="text-xs text-muted-foreground">
+            BILLIE v1.0.0 • Made by HADEA LLC
           </p>
         </div>
       </div>
