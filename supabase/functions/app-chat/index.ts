@@ -676,20 +676,56 @@ serve(async (req) => {
 
     // Handle reset action (just resets conversation history)
     if (action === 'reset') {
-      const { data: user } = await supabase
+      console.log('[Reset] Starting reset for phone:', phone);
+      
+      // Try to find user by phone first, then by email
+      let user = null;
+      const { data: userByPhone } = await supabase
         .from('billie_users')
-        .select('id')
+        .select('id, phone, email')
         .eq('phone', phone)
         .maybeSingle();
+      
+      if (userByPhone) {
+        user = userByPhone;
+        console.log('[Reset] Found user by phone:', user.id);
+      } else if (userEmail) {
+        // Try finding by email
+        const { data: userByEmail } = await supabase
+          .from('billie_users')
+          .select('id, phone, email')
+          .eq('email', userEmail)
+          .maybeSingle();
+        
+        if (userByEmail) {
+          user = userByEmail;
+          console.log('[Reset] Found user by email:', user.id);
+        }
+      }
 
       if (user) {
-        await supabase.from('billie_messages').delete().eq('user_id', user.id);
-        await supabase.from('billie_goals').delete().eq('user_id', user.id);
-        await supabase.from('billie_users').update({ 
+        console.log('[Reset] Deleting messages for user:', user.id);
+        const { error: msgError } = await supabase.from('billie_messages').delete().eq('user_id', user.id);
+        if (msgError) console.error('[Reset] Error deleting messages:', msgError);
+        
+        console.log('[Reset] Deleting goals for user:', user.id);
+        const { error: goalsError } = await supabase.from('billie_goals').delete().eq('user_id', user.id);
+        if (goalsError) console.error('[Reset] Error deleting goals:', goalsError);
+        
+        console.log('[Reset] Resetting user data');
+        const { error: updateError } = await supabase.from('billie_users').update({ 
           onboarding_step: 0, 
           name: null, 
-          goals: null 
-        }).eq('phone', phone);
+          goals: null,
+          current_streak: 0,
+          awaiting_check_in: false,
+          awaiting_response: false
+        }).eq('id', user.id);
+        if (updateError) console.error('[Reset] Error updating user:', updateError);
+        
+        console.log('[Reset] Reset complete for user:', user.id);
+      } else {
+        console.log('[Reset] No user found for phone:', phone, 'or email:', userEmail);
       }
 
       return new Response(JSON.stringify({ success: true }), {
