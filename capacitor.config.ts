@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.lovable.fdad419e585e47a5a821647690fccb2e',
+  appId: 'com.trybillie.app',
   appName: 'BILLIE',
   webDir: 'dist',
   plugins: {
