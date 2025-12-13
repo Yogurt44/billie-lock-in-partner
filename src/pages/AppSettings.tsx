@@ -45,6 +45,7 @@ export default function AppSettings() {
   const [timezone, setTimezone] = useState("America/New_York");
   const [isLoading, setIsLoading] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [isResettingConversation, setIsResettingConversation] = useState(false);
   const [userInfo, setUserInfo] = useState<{
     name: string | null;
     subscription_status: string | null;
@@ -110,19 +111,22 @@ export default function AppSettings() {
 
   const resetConversation = async () => {
     if (!user?.id) return;
-    if (!confirm("This will delete all your conversation history. Are you sure?")) {
-      return;
-    }
+    setIsResettingConversation(true);
 
     try {
-      await supabase.functions.invoke("app-chat", {
-        body: { action: "reset", userId: user.id, userEmail: user.email },
+      const deviceId = localStorage.getItem("billie_device_id");
+      const { error } = await supabase.functions.invoke("app-chat", {
+        body: { action: "reset", deviceId: deviceId || `auth_${user.id}`, userEmail: user.email },
       });
+      
+      if (error) throw error;
       toast.success("Conversation reset! Starting fresh.");
       navigate("/app");
     } catch (error) {
       console.error("Error resetting:", error);
-      toast.error("Failed to reset");
+      toast.error("Failed to reset conversation");
+    } finally {
+      setIsResettingConversation(false);
     }
   };
 
@@ -264,14 +268,34 @@ export default function AppSettings() {
             <LogOut className="h-4 w-4 mr-2" />
             Sign Out
           </Button>
-          <Button
-            variant="outline"
-            onClick={resetConversation}
-            className="w-full"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Reset Conversation History
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-full"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Reset Conversation History
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset conversation?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure? This will delete everything BILLIE knows about you - your goals, progress, and entire conversation history.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={resetConversation}
+                  disabled={isResettingConversation}
+                >
+                  {isResettingConversation ? "Resetting..." : "Reset Everything"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
 
         {/* Danger Zone - Account Deletion (Required by App Store 5.1.1(v)) */}
