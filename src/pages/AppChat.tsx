@@ -346,9 +346,10 @@ export default function AppChat() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="bg-card/80 backdrop-blur-xl border-b border-border/30 sticky top-0 z-10 safe-area-top">
-        <div className="px-4 py-3 flex items-center justify-between">
+      {/* Header with safe area */}
+      <header className="bg-card/80 backdrop-blur-xl border-b border-border/30 sticky top-0 z-10">
+        <div className="safe-area-top" />
+        <div className="px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
               src={billieIcon} 
@@ -364,9 +365,9 @@ export default function AppChat() {
             variant="ghost"
             size="icon"
             onClick={() => navigate('/app/settings')}
-            className="h-8 w-8 text-muted-foreground"
+            className="h-10 w-10 text-muted-foreground"
           >
-            <Settings className="h-4 w-4" />
+            <Settings className="h-5 w-5" />
           </Button>
         </div>
       </header>
@@ -476,9 +477,9 @@ export default function AppChat() {
       </div>
 
       {/* Input */}
-      <div className="bg-card/80 backdrop-blur-xl border-t border-border/30 safe-area-bottom">
-        <form onSubmit={sendMessage} className="px-4 py-3 max-w-3xl mx-auto">
-          <div className="flex gap-2 items-end">
+      <div className="bg-card/80 backdrop-blur-xl border-t border-border/30">
+        <form onSubmit={sendMessage} className="px-5 py-3 max-w-3xl mx-auto">
+          <div className="flex gap-3 items-end">
             <div className="flex-1 bg-muted/50 rounded-full border border-border/50">
               <Input
                 ref={inputRef}
@@ -487,7 +488,7 @@ export default function AppChat() {
                 placeholder={awaitingEmail ? "Enter your email" : awaitingOtp ? "Enter code above" : "Message"}
                 disabled={isLoading || awaitingOtp}
                 type={awaitingEmail ? "email" : "text"}
-                className="border-0 bg-transparent rounded-full focus-visible:ring-0 focus-visible:ring-offset-0 px-4"
+                className="border-0 bg-transparent rounded-full focus-visible:ring-0 focus-visible:ring-offset-0 px-4 h-11"
                 autoFocus
               />
             </div>
@@ -495,12 +496,13 @@ export default function AppChat() {
               type="submit" 
               disabled={!input.trim() || isLoading || awaitingOtp} 
               size="icon"
-              className="rounded-full h-10 w-10 shrink-0"
+              className="rounded-full h-11 w-11 shrink-0"
             >
               <Send className="h-4 w-4" />
             </Button>
           </div>
         </form>
+        <div className="safe-area-bottom" />
       </div>
     </div>
   );
