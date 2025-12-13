@@ -6,10 +6,10 @@
 
 /* Safe area for mobile notch/home indicator */
 .safe-area-top {
-  padding-top: env(safe-area-inset-top);
+  padding-top: max(env(safe-area-inset-top), 24px);
 }
 .safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(env(safe-area-inset-bottom), 20px);
 }
 
 @layer base {
