@@ -125,8 +125,7 @@ const Terms = () => {
           <h2 className="text-2xl font-semibold mb-4">10. Contact</h2>
           <p className="text-muted-foreground">
             Questions about these terms? Contact us at:<br />
-            <strong>Email:</strong> contact@trybillie.app<br />
-            <strong>Developer:</strong> HADEA LLC
+            <strong>Email:</strong> contact@trybillie.app
           </p>
         </section>
       </div>
