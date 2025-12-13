@@ -676,30 +676,35 @@ serve(async (req) => {
 
     // Handle reset action (just resets conversation history)
     if (action === 'reset') {
-      console.log('[Reset] Starting reset for phone:', phone);
+      console.log('[Reset] Starting reset for identifier:', phone, 'email:', userEmail);
       
-      // Try to find user by phone first, then by email
       let user = null;
-      const { data: userByPhone } = await supabase
-        .from('billie_users')
-        .select('id, phone, email')
-        .eq('phone', phone)
-        .maybeSingle();
-      
-      if (userByPhone) {
-        user = userByPhone;
-        console.log('[Reset] Found user by phone:', user.id);
-      } else if (userEmail) {
-        // Try finding by email
-        const { data: userByEmail } = await supabase
+
+      // Prefer email (stable identifier once verified)
+      if (userEmail) {
+        const { data: userByEmail, error: emailError } = await supabase
           .from('billie_users')
           .select('id, phone, email')
           .eq('email', userEmail)
           .maybeSingle();
-        
+        if (emailError) console.error('[Reset] Error finding user by email:', emailError);
         if (userByEmail) {
           user = userByEmail;
-          console.log('[Reset] Found user by email:', user.id);
+          console.log('[Reset] Found user by email:', user.id, 'phone:', user.phone);
+        }
+      }
+
+      // Fallback: try device/phone identifier
+      if (!user) {
+        const { data: userByPhone, error: phoneError } = await supabase
+          .from('billie_users')
+          .select('id, phone, email')
+          .eq('phone', phone)
+          .maybeSingle();
+        if (phoneError) console.error('[Reset] Error finding user by phone:', phoneError);
+        if (userByPhone) {
+          user = userByPhone;
+          console.log('[Reset] Found user by phone:', user.id);
         }
       }
 
@@ -725,7 +730,7 @@ serve(async (req) => {
         
         console.log('[Reset] Reset complete for user:', user.id);
       } else {
-        console.log('[Reset] No user found for phone:', phone, 'or email:', userEmail);
+        console.log('[Reset] No user found for identifier:', phone, 'or email:', userEmail);
       }
 
       return new Response(JSON.stringify({ success: true }), {
