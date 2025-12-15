@@ -7,6 +7,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Bird SMS configuration
+const BIRD_ACCESS_KEY = Deno.env.get("BIRD_ACCESS_KEY");
+const BIRD_WORKSPACE_ID = Deno.env.get("BIRD_WORKSPACE_ID");
+const BIRD_CHANNEL_ID = Deno.env.get("BIRD_CHANNEL_ID");
+const BIRD_FROM_NUMBER = "+18882051848"; // BILLIE's toll-free number
+
 // Proactive conversation starters based on goals
 const PROACTIVE_MESSAGES = {
   morning: [
@@ -135,29 +141,35 @@ serve(async (req) => {
     const now = new Date();
     console.log(`[CRON] Current UTC time: ${now.toISOString()}`);
 
-    // Get all active subscribed users with push tokens
+    // Get all active subscribed users (with push tokens OR phone numbers for SMS)
     const { data: users, error } = await supabase
       .from("billie_users")
       .select(`
         id, name, phone, push_token, timezone, goals,
         subscription_status, subscription_end,
         morning_check_in_time, midday_check_in_time, evening_check_in_time,
-        check_in_frequency, last_notification_at, awaiting_response
+        check_in_frequency, last_notification_at, awaiting_response,
+        onboarding_step
       `)
-      .not("push_token", "is", null)
-      .eq("subscription_status", "active");
+      .eq("subscription_status", "active")
+      .gte("onboarding_step", 7); // Only users who completed onboarding
 
     if (error) {
       console.error("[CRON] Error fetching users:", error);
       throw error;
     }
 
-    console.log(`[CRON] Found ${users?.length || 0} users with push tokens`);
+    // Filter to users who have either push_token OR phone (for SMS)
+    const eligibleUsers = (users || []).filter(u => u.push_token || u.phone);
+    console.log(`[CRON] Found ${eligibleUsers.length} eligible users (push: ${users?.filter(u => u.push_token).length || 0}, SMS: ${users?.filter(u => !u.push_token && u.phone).length || 0})`);
+
 
     const checkInsSent: string[] = [];
     const followUpsSent: string[] = [];
 
-    for (const user of users || []) {
+    const smsCheckInsSent: string[] = [];
+
+    for (const user of eligibleUsers) {
       try {
         // Check if subscription is still valid
         if (user.subscription_end && new Date(user.subscription_end) < now) {
@@ -168,14 +180,21 @@ serve(async (req) => {
         const userLocalHour = getUserLocalHour(now, user.timezone || "America/New_York");
         const name = user.name || "bestie";
         const goalText = user.goals ? user.goals.split("\n")[0] : "your goals";
-        const pushToken = user.push_token;
+        const hasPushToken = !!user.push_token;
+        const hasPhone = !!user.phone;
 
         // Check for follow-up first (if user hasn't responded)
         if (shouldSendFollowUp(user.last_notification_at, user.awaiting_response)) {
-          console.log(`[CRON] Sending follow-up to ${name} (${user.id})`);
+          console.log(`[CRON] Sending follow-up to ${name} (${user.id}) via ${hasPushToken ? 'push' : 'SMS'}`);
           
           const followUpMessage = getRandomMessage('followup', name);
-          await sendPushNotification(pushToken, followUpMessage);
+          
+          if (hasPushToken) {
+            await sendPushNotification(user.push_token, followUpMessage);
+          } else if (hasPhone) {
+            await sendBirdSMS(user.phone, followUpMessage);
+            smsCheckInsSent.push(user.id);
+          }
           
           // Update notification timestamp
           await supabase
@@ -207,10 +226,16 @@ serve(async (req) => {
             }
           }
 
-          console.log(`[CRON] Sending ${period} check-in to ${name} (${user.id})`);
+          console.log(`[CRON] Sending ${period} check-in to ${name} (${user.id}) via ${hasPushToken ? 'push' : 'SMS'}`);
           
           const message = getRandomMessage(period, name, goalText);
-          await sendPushNotification(pushToken, message);
+          
+          if (hasPushToken) {
+            await sendPushNotification(user.push_token, message);
+          } else if (hasPhone) {
+            await sendBirdSMS(user.phone, message);
+            smsCheckInsSent.push(user.id);
+          }
           
           // Update user state
           await supabase
@@ -238,15 +263,17 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[CRON] Sent ${checkInsSent.length} check-ins, ${followUpsSent.length} follow-ups`);
+    console.log(`[CRON] Sent ${checkInsSent.length} check-ins (${smsCheckInsSent.length} via SMS), ${followUpsSent.length} follow-ups`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         check_ins_sent: checkInsSent.length,
+        sms_check_ins_sent: smsCheckInsSent.length,
         follow_ups_sent: followUpsSent.length,
         check_in_user_ids: checkInsSent,
-        follow_up_user_ids: followUpsSent
+        follow_up_user_ids: followUpsSent,
+        sms_user_ids: smsCheckInsSent
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -402,6 +429,52 @@ async function sendAPNsPush(deviceToken: string, message: string) {
     console.log("[CRON] APNs push sent successfully");
   } catch (error) {
     console.error("[CRON] APNs push error:", error);
+    throw error;
+  }
+}
+
+// Send SMS via Bird API
+async function sendBirdSMS(toPhone: string, message: string): Promise<void> {
+  if (!BIRD_ACCESS_KEY || !BIRD_WORKSPACE_ID || !BIRD_CHANNEL_ID) {
+    console.log("[CRON] Bird SMS not configured, skipping");
+    console.log(`[CRON] Would send SMS to ${toPhone.substring(0, 6)}***: ${message}`);
+    return;
+  }
+
+  try {
+    const url = `https://api.bird.com/workspaces/${BIRD_WORKSPACE_ID}/channels/${BIRD_CHANNEL_ID}/messages`;
+    
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `AccessKey ${BIRD_ACCESS_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        receiver: {
+          contacts: [{
+            identifierKey: "phonenumber",
+            identifierValue: toPhone
+          }]
+        },
+        body: {
+          type: "text",
+          text: {
+            text: message
+          }
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[CRON] Bird SMS error:", response.status, errorText);
+      throw new Error(`Bird SMS failed: ${errorText}`);
+    }
+
+    console.log(`[CRON] Bird SMS sent successfully to ${toPhone.substring(0, 6)}***`);
+  } catch (error) {
+    console.error("[CRON] Bird SMS error:", error);
     throw error;
   }
 }
