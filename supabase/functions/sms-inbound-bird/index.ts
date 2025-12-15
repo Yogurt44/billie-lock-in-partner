@@ -16,57 +16,47 @@ const birdWorkspaceId = Deno.env.get('BIRD_WORKSPACE_ID');
 const birdChannelId = Deno.env.get('BIRD_CHANNEL_ID');
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
-// BILLIE's complete personality - based on extensive Tomo conversation analysis
-const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a Gen Z accountability partner who texts like a real friend. You're the friend who actually keeps it real - blunt, funny, caring, but never fluffy or corporate.
+// BILLIE's complete personality - clingy bossy best friend who genuinely cares
+const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a funny, clingy, bossy best friend who genuinely wants the best for the user. You're not a coach - you're that one friend who actually keeps it real.
 
 ## CORE IDENTITY:
-- You're like that one brutally honest friend everyone needs
-- You genuinely care about them succeeding but you're not gonna sugarcoat anything
-- You remember EVERYTHING they tell you and throw it back at them later (you have their FULL conversation history)
-- You're playful - you roast them but it comes from love
-- You adapt your language based on who you're talking to (unc vs queen, him vs her)
+- You ECHO and REMEMBER specific details they share (use their actual name, reference what they said)
+- You're playfully bossy - you push back on excuses but it comes from love
+- You're clingy in a good way - you actually care about following up
+- You challenge bad mindsets and bad ideas directly
+- You find the ONE thing that matters most, not a list of 10 goals
 
-## TEXTING STYLE (THIS IS CRITICAL - FOLLOW EXACTLY):
+## TEXTING STYLE (CRITICAL - FOLLOW EXACTLY):
 
 ### Message Structure:
-- Send SHORT messages - multiple quick texts, NOT one long paragraph
-- Separate each thought with \\n\\n (this creates separate message bubbles)
-- 2-4 short messages per response, NOT walls of text
-- Always end with a question to keep the convo going
+- Send 2-4 SHORT messages, NOT paragraphs
+- Separate each thought with \\n\\n (creates separate bubbles)
+- Always end with a question to keep convo going
+- Echo back what they said before responding ("so you're saying..." / "wait so...")
 
 ### Language Rules:
-- lowercase everything except for emphasis (LMAO, YESSS, RAHHH, DELETE, ONE, RIGHT NOW)
-- Gen Z slang: bet, fr, unc, nah, tryna, prob, rn, fire, kinda, gonna, lowkey, highkey, slay, vibes, deadass, no cap, sus, valid, mid, based, bussin, ate, snatched, periodt, its giving, main character, delulu
-- Abbreviations: u, ur, rn, prob, gonna, tryna, w (with), bc, idk, ngl, tbh, imo
-- "you're kinda him" / "you're kinda her" / "ok you're HER**" for validation
+- lowercase everything except emphasis (LMAO, ONE, DELETE, RIGHT NOW)
+- Gen Z slang: bet, fr, unc, nah, tryna, prob, rn, fire, lowkey, highkey, deadass, no cap, valid, mid, delulu
+- Abbreviations: u, ur, rn, prob, gonna, tryna, w, bc, idk, ngl, tbh
+- "you're kinda him" / "you're kinda her" for validation
 - "unc" for guys, "queen" for girls (once you know)
 
 ### Emoji Usage (MINIMAL):
-- Only use expressive emojis sparingly: 😭 🤨 💀 🔥 😂
-- NEVER use: 😊 ✨ 🎉 💪 🙌 👏 ❤️ 🥰 or any cute/corporate emojis
-- Max 1-2 emojis per response, often zero
+- Only: 😭 🤨 💀 🔥 (sparingly, max 1-2 per response)
+- NEVER: 😊 ✨ 🎉 💪 🙌 👏 ❤️ 🥰
 
 ### What NOT to do:
 - No "I understand how you feel"
 - No "That's great!" or "Amazing!"
-- No motivational quotes
-- No corporate speak
+- No motivational quotes or corporate speak
 - No long paragraphs
-- No excessive punctuation!!!
 - No being preachy
+- No advancing conversation without acknowledging what they said
 
-## ONBOARDING FLOW APPROACH:
-Don't rush through onboarding. Have a real conversation:
-1. Playful intro - make a guess about them
-2. Get their name - comment on it (roast or hype)
-3. Ask their age/context (not sus i promise)
-4. Ask what brought them here / what they're trying to do
-5. Dig deeper - ask probing questions about their real situation
-6. Identify the ONE most important thing
-7. Understand what's actually stopping them
-8. Create a personalized approach based on everything you learned
+## CRITICAL BEHAVIOR:
+You must REFERENCE and USE what the user tells you. If they say their name is Emma, you say "emma" not "ok your HER". If they mention a specific struggle, you bring it up later. You're building a real relationship, not running through a script.
 
-Remember: You're BILLIE. Keep it real, keep it short, keep it helpful. Be the friend they need, not the coach they expect. USE THE CONVERSATION HISTORY.`;
+Remember: Be the friend they need. Keep it real, keep it short, keep it human.`;
 
 // Security helpers
 function maskPhone(phone: string): string {
@@ -211,34 +201,95 @@ function buildConversationContext(user: any, history: Array<{role: string, conte
   return context;
 }
 
+// Helper to detect if message contains timezone info
+function looksLikeTimezone(message: string): boolean {
+  const normalized = message.toLowerCase().trim();
+  const timezonePatterns = [
+    /\b(est|pst|cst|mst|eastern|pacific|central|mountain)\b/i,
+    /\b(new york|la|los angeles|chicago|denver|seattle|miami|boston|dallas|phoenix|atlanta)\b/i,
+    /\b(morning|afternoon|evening|night|am|pm|\d{1,2}:\d{2}|\d{1,2}\s*(am|pm))\b/i,
+    /\b(early|late|before|after|around)\b/i,
+  ];
+  return timezonePatterns.some(p => p.test(normalized));
+}
+
+// Helper to detect positive confirmation
+function looksLikeConfirmation(message: string): boolean {
+  const normalized = message.toLowerCase().trim();
+  const positives = ['yes', 'yeah', 'yep', 'yea', 'yup', 'sure', 'ok', 'okay', 'bet', 'lets go', 'let\'s go', 'down', 'im down', 'sounds good', 'perfect', 'fire', 'do it', 'let\'s do it'];
+  return positives.some(p => normalized === p || normalized.startsWith(p + ' ') || normalized.includes(p));
+}
+
+// Helper to extract timezone from message
+function extractTimezone(message: string): string {
+  const normalized = message.toLowerCase();
+  if (/\b(est|eastern|new york|boston|miami|atlanta)\b/i.test(normalized)) return 'America/New_York';
+  if (/\b(cst|central|chicago|dallas)\b/i.test(normalized)) return 'America/Chicago';
+  if (/\b(mst|mountain|denver|phoenix)\b/i.test(normalized)) return 'America/Denver';
+  if (/\b(pst|pacific|la|los angeles|seattle)\b/i.test(normalized)) return 'America/Los_Angeles';
+  return 'America/New_York'; // default
+}
+
+// Helper to extract check-in time preference
+function extractCheckInTime(message: string): string {
+  const normalized = message.toLowerCase();
+  if (/\b(morning|early|8|9|10)\s*(am)?\b/i.test(normalized)) return '09:00';
+  if (/\b(afternoon|midday|noon|12|1|2)\s*(pm)?\b/i.test(normalized)) return '14:00';
+  if (/\b(evening|night|late|7|8|9)\s*(pm)?\b/i.test(normalized)) return '20:00';
+  return '09:00'; // default morning
+}
+
 function getOnboardingContext(user: any, historyLength: number): string {
   const step = user.onboarding_step;
   const name = user.name;
   const goals = user.goals;
   
-  if (historyLength > 0 && step >= 5) {
-    return `## TASK: Ongoing conversation. Be their accountability partner. Goals: ${goals || 'ask about goals'}`;
+  // Post-onboarding: accountability partner mode
+  if (step >= 7) {
+    return `## TASK: You're their accountability partner now. Goals: ${goals || 'check in on them'}. Reference their specific goals and check on progress. Be proactive.`;
   }
   
-  if (step === 0 && !name && historyLength === 0) {
-    return `## TASK: NEW USER. Give playful welcome, make a name guess.`;
+  // Step 0: New user, playful welcome
+  if (step === 0 && historyLength === 0) {
+    return `## TASK: NEW USER! Give a playful welcome. Make a fun guess about their name or who they are. Be curious and engaging. Ask for their name.`;
   }
-  if (step === 1 && name && !goals) {
-    return `## TASK: Got name (${name}). Comment on it, ask age.`;
+  
+  // Step 0→1: They replied to welcome, capture name
+  if (step === 0 && historyLength > 0) {
+    return `## TASK: They just told you their name. Comment on it (roast it playfully or hype it up). Then ask how old they are (say "not being sus i promise" or similar).`;
   }
+  
+  // Step 1→2: Got age, ask what brought them here
+  if (step === 1) {
+    return `## TASK: You know their name is ${name}. They just told you their age. Comment on it briefly, then ask what's going on in their life - what brought them to you? What are they trying to do?`;
+  }
+  
+  // Step 2→3: They shared something, dig deeper
   if (step === 2) {
-    return `## TASK: Ask what's going on, what brought them here.`;
+    return `## TASK: They shared what they're working on. ECHO BACK what they said specifically ("so you're saying..."). Then ask probing questions to find the ONE most important thing. Push back if they listed too many things.`;
   }
-  if (step === 3 && goals) {
-    return `## TASK: They shared goals: "${goals}". Push back, find the ONE thing.`;
+  
+  // Step 3→4: Got goals, dig into blockers
+  if (step === 3) {
+    return `## TASK: Their main goal: "${goals}". Now dig into what's ACTUALLY stopping them. Ask about their life situation, what's failed before, what's really going on. Be their friend who wants to understand.`;
   }
+  
+  // Step 4→5: Understood blockers, ask for timezone/schedule
   if (step === 4) {
-    return `## TASK: Dig deeper into blockers and life situation.`;
+    return `## TASK: You understand their situation now. Ask when they want you to check in on them. Ask what timezone they're in and when works best (morning, afternoon, evening). Make it casual like "when should i bug you?"`;
   }
-  if (step >= 5) {
-    return `## TASK: Fully onboarded. Be accountability partner. Goals: ${goals}`;
+  
+  // Step 5→6: Got timezone, create personalized plan
+  if (step === 5) {
+    return `## TASK: Create a SHORT numbered plan (2-3 items max) based on everything you learned about them. Reference their specific goals and blockers. Then ask "does this sound helpful or would it be annoying?" to confirm.`;
   }
-  return `## TASK: Have natural conversation.`;
+  
+  // Step 6→7: Awaiting confirmation
+  if (step === 6) {
+    return `## TASK: You shared a plan. They should confirm if it works for them. If they say yes/sounds good, celebrate briefly. If they have concerns, address them.`;
+  }
+  
+  return `## TASK: Have a natural conversation. Reference what you know about them.`;
 }
 
 async function generateBillieResponse(
@@ -532,33 +583,64 @@ serve(async (req) => {
     // Save incoming message
     await saveMessage(user.id, 'user', message || '[empty message]');
 
-    // Handle state transitions
+    // Handle state transitions - AI-driven 7-step onboarding
     let updates: Record<string, any> = {};
     let justCompletedOnboarding = false;
 
-    if (user.onboarding_step === 0 && !user.name) {
-      if (conversationHistory.length > 0) {
-        updates.name = sanitizeInput(message, 50);
-        updates.onboarding_step = 1;
-      }
-    } else if (user.onboarding_step === 1) {
+    // Step 0: New user replied with their name
+    if (user.onboarding_step === 0 && !user.name && conversationHistory.length > 0) {
+      updates.name = sanitizeInput(message, 50);
+      updates.onboarding_step = 1;
+      console.log(`[Onboarding] Step 0→1: Captured name "${updates.name}"`);
+    }
+    // Step 1: Got age response, advance to asking about goals
+    else if (user.onboarding_step === 1) {
       updates.onboarding_step = 2;
-    } else if (user.onboarding_step === 2) {
+      console.log('[Onboarding] Step 1→2: Got age, asking about goals');
+    }
+    // Step 2: Check if they shared real goals (not just "hi" or "ok")
+    else if (user.onboarding_step === 2) {
       if (looksLikeGoals(message)) {
         updates.goals = sanitizeInput(message, 1000);
         updates.onboarding_step = 3;
         const parsedGoals = parseNumberedGoals(message);
         if (parsedGoals.length > 0) await saveUserGoals(user.id, parsedGoals);
+        console.log(`[Onboarding] Step 2→3: Captured goals`);
       }
-    } else if (user.onboarding_step === 3) {
+      // If not goals, stay at step 2 - AI will ask again
+    }
+    // Step 3: Discussed blockers, advance to timezone question
+    else if (user.onboarding_step === 3) {
       updates.onboarding_step = 4;
-    } else if (user.onboarding_step === 4) {
+      console.log('[Onboarding] Step 3→4: Discussed blockers');
+    }
+    // Step 4: Got blocker discussion, advance to timezone question
+    else if (user.onboarding_step === 4) {
       updates.onboarding_step = 5;
-      justCompletedOnboarding = true;
+      console.log('[Onboarding] Step 4→5: Ready for timezone');
+    }
+    // Step 5: Extract timezone and check-in preference, create plan
+    else if (user.onboarding_step === 5) {
+      if (looksLikeTimezone(message)) {
+        updates.timezone = extractTimezone(message);
+        updates.preferred_check_in_time = extractCheckInTime(message);
+        updates.onboarding_step = 6;
+        console.log(`[Onboarding] Step 5→6: Timezone=${updates.timezone}, CheckIn=${updates.preferred_check_in_time}`);
+      }
+      // If no timezone info, stay at step 5 - AI will ask again
+    }
+    // Step 6: Awaiting plan confirmation
+    else if (user.onboarding_step === 6) {
+      if (looksLikeConfirmation(message)) {
+        updates.onboarding_step = 7;
+        justCompletedOnboarding = true;
+        console.log('[Onboarding] Step 6→7: Plan confirmed! Onboarding complete.');
+      }
+      // If not confirmed, stay at step 6 - AI will address concerns
     }
 
-    // Handle check-ins for onboarded users
-    if (user.onboarding_step >= 5) {
+    // Handle check-ins for onboarded users (step 7+)
+    if (user.onboarding_step >= 7) {
       if (normalizedMessage.includes('check in') || normalizedMessage === 'checkin') {
         updates.awaiting_check_in = true;
       } else if (user.awaiting_check_in) {
@@ -567,6 +649,10 @@ serve(async (req) => {
           const streakUpdates = calculateStreakUpdates(user, true);
           Object.assign(updates, streakUpdates);
         }
+      }
+      // Clear awaiting_response flag when user engages
+      if (user.awaiting_response) {
+        updates.awaiting_response = false;
       }
     }
 
@@ -577,10 +663,10 @@ serve(async (req) => {
     const updatedUser = { ...user, ...updates };
     let responseMessage = await generateBillieResponse(message, updatedUser, conversationHistory);
 
-    // Payment wall after onboarding
+    // Payment wall after completing onboarding (step 7)
     if (justCompletedOnboarding && !isUserSubscribed(updatedUser)) {
       const pricingUrl = getPricingLink(user.id, from);
-      responseMessage = `ok i'm fully locked in on helping you now 🔥\n\nbut real talk - to keep me as your daily accountability partner, you gotta subscribe\n\nwe got monthly ($9.99) or annual ($79.99)\n\npick your plan: ${pricingUrl}`;
+      responseMessage = `ok we're locked in 🔥\n\ntime to make it official tho - to keep me as your daily accountability partner you gotta subscribe\n\nits $9.99/month or $79.99/year\n\npick your plan: ${pricingUrl}`;
     }
 
     // Save and send response
