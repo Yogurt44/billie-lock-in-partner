@@ -504,36 +504,38 @@ async function sendBirdSMS(to: string, message: string): Promise<boolean> {
 function parseBirdWebhook(body: any): { from: string; message: string } | null {
   try {
     // Bird sends JSON webhook with sender and body info
-    // Structure varies based on webhook version, handle common patterns
+    // Real Bird format wraps data in a "payload" object:
+    // { service: "channels", event: "sms.inbound", payload: { sender: {...}, body: {...} } }
     console.log('[Bird] Raw webhook payload:', JSON.stringify(body).slice(0, 500));
+    
+    // Check if data is wrapped in payload object (real Bird format)
+    const data = body.payload || body;
     
     let from = '';
     let message = '';
     
     // Try to extract sender phone number
-    if (body.sender?.contact?.identifierValue) {
-      from = body.sender.contact.identifierValue;
-    } else if (body.sender?.contacts?.[0]?.identifierValue) {
-      from = body.sender.contacts[0].identifierValue;
-    } else if (body.contact?.identifierValue) {
-      from = body.contact.identifierValue;
-    } else if (body.originator) {
-      from = body.originator;
-    } else if (body.from) {
-      from = body.from;
+    if (data.sender?.contact?.identifierValue) {
+      from = data.sender.contact.identifierValue;
+    } else if (data.sender?.contacts?.[0]?.identifierValue) {
+      from = data.sender.contacts[0].identifierValue;
+    } else if (data.contact?.identifierValue) {
+      from = data.contact.identifierValue;
+    } else if (data.originator) {
+      from = data.originator;
+    } else if (data.from) {
+      from = data.from;
     }
     
     // Try to extract message text
-    if (body.body?.text?.text) {
-      message = body.body.text.text;
-    } else if (body.body?.text) {
-      message = typeof body.body.text === 'string' ? body.body.text : body.body.text.text;
-    } else if (body.message?.body) {
-      message = body.message.body;
-    } else if (body.payload) {
-      message = body.payload;
-    } else if (body.content?.text) {
-      message = body.content.text;
+    if (data.body?.text?.text) {
+      message = data.body.text.text;
+    } else if (data.body?.text) {
+      message = typeof data.body.text === 'string' ? data.body.text : data.body.text.text;
+    } else if (data.message?.body) {
+      message = data.message.body;
+    } else if (data.content?.text) {
+      message = data.content.text;
     }
     
     if (!from) {
