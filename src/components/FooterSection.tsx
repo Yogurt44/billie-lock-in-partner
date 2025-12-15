@@ -1,7 +1,10 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Apple, Smartphone } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 import { Link } from "react-router-dom";
+
+const BILLIE_NUMBER = "+1 (888) 205-1848";
+const BILLIE_SMS_LINK = "sms:+18882051848";
 
 export const FooterSection = () => {
   return (
@@ -22,23 +25,25 @@ export const FooterSection = () => {
           className="max-w-2xl mx-auto"
         >
           <h2 className="text-4xl sm:text-5xl font-bold mb-4 text-white">
-            stop scrolling. download BILLIE.
+            stop scrolling. text BILLIE.
           </h2>
-          <p className="text-lg text-white/80 mb-10">
+          <p className="text-lg text-white/80 mb-6">
             no more "i'll start monday" bs. this is ur sign. let's lock in.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          {/* Phone Number */}
+          <a 
+            href={BILLIE_SMS_LINK}
+            className="inline-block text-2xl sm:text-3xl font-bold text-ice hover:text-ice/80 transition-colors mb-8"
+          >
+            {BILLIE_NUMBER}
+          </a>
+
+          <div className="flex flex-col items-center justify-center gap-4">
             <Button asChild variant="ice" size="xl" className="group">
-              <a href="https://apps.apple.com/app/billie" target="_blank" rel="noopener noreferrer">
-                <Apple className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
-                Download on iOS
-              </a>
-            </Button>
-            <Button asChild variant="outline" size="xl" className="group border-white/20 text-white hover:bg-white/10">
-              <a href="https://play.google.com/store/apps/details?id=app.billie" target="_blank" rel="noopener noreferrer">
-                <Smartphone className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
-                Get on Android
+              <a href={BILLIE_SMS_LINK}>
+                <MessageCircle className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
+                Text BILLIE Now
               </a>
             </Button>
           </div>
@@ -48,6 +53,7 @@ export const FooterSection = () => {
             <div className="flex flex-wrap justify-center gap-6 mb-4 text-sm text-white/60">
               <Link to="/terms" className="hover:text-white transition-colors">Terms</Link>
               <Link to="/privacy" className="hover:text-white transition-colors">Privacy</Link>
+              <Link to="/sms-consent" className="hover:text-white transition-colors">SMS Consent</Link>
             </div>
             <p className="text-sm text-white/60">
               © 2025 BILLIE. built for ppl who are done making excuses.

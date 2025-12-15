@@ -1,6 +1,9 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Apple, Smartphone } from "lucide-react";
+import { MessageCircle } from "lucide-react";
+
+const BILLIE_NUMBER = "+1 (888) 205-1848";
+const BILLIE_SMS_LINK = "sms:+18882051848";
 
 export const HeroSection = () => {
   return (
@@ -27,7 +30,7 @@ export const HeroSection = () => {
             transition={{ duration: 0.5, delay: 0.1 }}
             className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-frost border border-ice/30 mb-6"
           >
-            <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Now Available</span>
+            <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Text to Start</span>
           </motion.div>
 
           {/* Intro copy */}
@@ -55,28 +58,38 @@ export const HeroSection = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="text-xl sm:text-2xl text-muted-foreground font-medium mb-12 max-w-xl mx-auto"
+            className="text-xl sm:text-2xl text-muted-foreground font-medium mb-8 max-w-xl mx-auto"
           >
             your accounta<span className="text-ice font-bold">BILLIE</span>ty partner — keeping you locked in, daily.
           </motion.p>
 
-          {/* App Store CTAs */}
+          {/* Phone Number Display */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.6, delay: 0.35 }}
+            className="mb-8"
+          >
+            <p className="text-sm text-muted-foreground mb-2">text BILLIE at</p>
+            <a 
+              href={BILLIE_SMS_LINK}
+              className="text-3xl sm:text-4xl font-bold text-ice hover:text-ice/80 transition-colors"
+            >
+              {BILLIE_NUMBER}
+            </a>
+          </motion.div>
+
+          {/* SMS CTA */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.4 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4"
+            className="flex flex-col items-center justify-center gap-4"
           >
             <Button asChild variant="hero" size="xl" className="group">
-              <a href="https://apps.apple.com/app/billie" target="_blank" rel="noopener noreferrer">
-                <Apple className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
-                Download on iOS
-              </a>
-            </Button>
-            <Button asChild variant="outline" size="xl" className="group border-ice/30 hover:bg-ice/10">
-              <a href="https://play.google.com/store/apps/details?id=app.billie" target="_blank" rel="noopener noreferrer">
-                <Smartphone className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
-                Get on Android
+              <a href={BILLIE_SMS_LINK}>
+                <MessageCircle className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
+                Text BILLIE Now
               </a>
             </Button>
           </motion.div>
