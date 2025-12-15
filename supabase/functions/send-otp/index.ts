@@ -4,15 +4,31 @@ import { Resend } from "https://esm.sh/resend@2.0.0";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// CORS restricted to production domain
+const allowedOrigins = ['https://trybillie.app', 'https://www.trybillie.app'];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
+
+// Email validation regex (RFC 5322 simplified)
+const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// Rate limiting: max 3 OTP requests per email per 10 minutes
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_REQUESTS_PER_WINDOW = 3;
+
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -21,8 +37,17 @@ serve(async (req) => {
     const body = await req.json();
     const { email, action, code } = body;
 
-    if (!email || typeof email !== "string") {
-      return new Response(JSON.stringify({ error: "Email is required" }), {
+    // Input validation
+    if (!email || typeof email !== "string" || email.length > 254) {
+      return new Response(JSON.stringify({ error: "Invalid request" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate email format
+    if (!EMAIL_REGEX.test(email)) {
+      return new Response(JSON.stringify({ error: "Invalid email format" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -32,6 +57,27 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     if (action === "send") {
+      // Rate limiting check: count recent OTP requests for this email
+      const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+      
+      const { count, error: countError } = await supabase
+        .from("email_otp_codes")
+        .select("*", { count: "exact", head: true })
+        .eq("email", normalizedEmail)
+        .gte("created_at", windowStart);
+
+      if (countError) {
+        console.error("Rate limit check error:", countError);
+      }
+
+      if ((count || 0) >= MAX_REQUESTS_PER_WINDOW) {
+        console.log(`[OTP] Rate limit exceeded for ${normalizedEmail.substring(0, 3)}***`);
+        return new Response(JSON.stringify({ error: "Too many requests. Please try again later." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Generate 6-digit code
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
@@ -54,7 +100,10 @@ serve(async (req) => {
 
       if (insertError) {
         console.error("Failed to insert OTP code:", insertError);
-        throw new Error("Failed to create verification code");
+        return new Response(JSON.stringify({ error: "Unable to process request" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       // Send email via Resend
@@ -77,7 +126,10 @@ serve(async (req) => {
 
       if (emailError) {
         console.error("Failed to send email:", emailError);
-        throw new Error("Failed to send verification email");
+        return new Response(JSON.stringify({ error: "Unable to process request" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       console.log(`[OTP] Sent code to ${normalizedEmail.substring(0, 3)}***`);
@@ -87,8 +139,8 @@ serve(async (req) => {
       });
 
     } else if (action === "verify") {
-      if (!code || typeof code !== "string") {
-        return new Response(JSON.stringify({ error: "Code is required" }), {
+      if (!code || typeof code !== "string" || code.length !== 6 || !/^\d{6}$/.test(code)) {
+        return new Response(JSON.stringify({ error: "Invalid code format" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -106,7 +158,10 @@ serve(async (req) => {
 
       if (fetchError) {
         console.error("Failed to fetch OTP code:", fetchError);
-        throw new Error("Failed to verify code");
+        return new Response(JSON.stringify({ error: "Unable to process request" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       if (!otpRecord) {
@@ -143,7 +198,10 @@ serve(async (req) => {
 
         if (createError) {
           console.error("Failed to create user:", createError);
-          throw new Error("Failed to create user");
+          return new Response(JSON.stringify({ error: "Unable to process request" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
         userId = newUser.id;
       }
@@ -162,7 +220,7 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error("Error in send-otp function:", error);
-    return new Response(JSON.stringify({ error: error.message || "Unknown error" }), {
+    return new Response(JSON.stringify({ error: "Unable to process request" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -3,16 +3,26 @@ import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// CORS restricted to production domain
+const allowedOrigins = ['https://trybillie.app', 'https://www.trybillie.app'];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 // Stripe price IDs
-const PRICES = {
+const PRICES: Record<string, string> = {
   monthly: "price_1SaiirAQ7IuLqpQm58jZBL7e", // $9.99/month
   annual: "price_1SaijMAQ7IuLqpQmGZsiKGZX",  // $79.99/year
 };
+
+// Valid plan values
+const VALID_PLANS = ['monthly', 'annual'];
 
 // Verify HMAC-signed token
 function verifyToken(token: string): { userId: string; phone: string; valid: boolean } {
@@ -58,24 +68,40 @@ function verifyToken(token: string): { userId: string; phone: string; valid: boo
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { token, plan = "monthly" } = await req.json();
+    const body = await req.json();
+    const { token, plan = "monthly" } = body;
     
-    if (!token) {
-      // Generic error - don't reveal what's missing
-      throw new Error("Unable to process request");
+    // Input validation
+    if (!token || typeof token !== 'string') {
+      return new Response(JSON.stringify({ error: "Unable to process request" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
+    // Validate plan against allowed values
+    if (!VALID_PLANS.includes(plan)) {
+      return new Response(JSON.stringify({ error: "Unable to process request" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
     }
 
     // Verify the signed token
     const { userId: user_id, phone, valid } = verifyToken(token);
     
     if (!valid || !user_id || !phone) {
-      // Generic error - don't reveal token validation details
-      throw new Error("Unable to process request");
+      return new Response(JSON.stringify({ error: "Unable to process request" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
     }
 
     console.log(`[Checkout] Creating session for verified token, plan: ${plan}`);
@@ -94,9 +120,11 @@ serve(async (req) => {
       .maybeSingle();
 
     if (userError || !user) {
-      // SECURITY: Generic error - don't reveal if user exists
       console.error("[Checkout] User verification failed");
-      throw new Error("Unable to process request");
+      return new Response(JSON.stringify({ error: "Unable to process request" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
     }
 
     let customerId = user.stripe_customer_id;
@@ -114,7 +142,7 @@ serve(async (req) => {
         ...(isRealPhone ? { phone: phone } : {}),
         metadata: {
           billie_user_id: user_id,
-          billie_phone: phone, // Store full identifier in metadata
+          billie_phone: phone,
         },
       });
       customerId = customer.id;
@@ -128,7 +156,7 @@ serve(async (req) => {
       console.log(`[Checkout] Created Stripe customer`);
     }
 
-    const priceId = plan === "annual" ? PRICES.annual : PRICES.monthly;
+    const priceId = PRICES[plan];
     const origin = req.headers.get("origin") || "https://trybillie.app";
 
     const session = await stripe.checkout.sessions.create({
@@ -160,7 +188,6 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error("[Checkout] Error:", error);
-    // SECURITY: Always return generic error to client
     return new Response(JSON.stringify({ error: "Unable to process request" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
