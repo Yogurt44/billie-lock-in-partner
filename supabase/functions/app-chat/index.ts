@@ -2,10 +2,17 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// CORS restricted to production domain
+const allowedOrigins = ['https://trybillie.app', 'https://www.trybillie.app'];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -503,6 +510,8 @@ function calculateStreakUpdates(user: any, isPositiveCheckIn: boolean): Record<s
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -511,11 +520,19 @@ serve(async (req) => {
     const body = await req.json();
     const { action, message, deviceId, userId, userEmail, pushToken, settings, email } = body;
 
+    // Input validation for message length
+    if (message && (typeof message !== 'string' || message.length > 2000)) {
+      return new Response(JSON.stringify({ error: 'Invalid request' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Support both deviceId (anonymous) and userId (legacy auth)
     const identifier = deviceId || (userId ? `auth_${userId}` : null);
 
     if (!identifier) {
-      return new Response(JSON.stringify({ error: 'Device ID or User ID required' }), {
+      return new Response(JSON.stringify({ error: 'Invalid request' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -908,7 +925,7 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error('[App] Error:', error);
-    return new Response(JSON.stringify({ error: 'Something went wrong' }), {
+    return new Response(JSON.stringify({ error: 'Unable to process request' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
