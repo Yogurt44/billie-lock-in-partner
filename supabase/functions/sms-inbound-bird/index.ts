@@ -279,14 +279,14 @@ function getOnboardingContext(user: any, historyLength: number): string {
     return `## TASK: You understand their situation now. Ask when they want you to check in on them. Ask what timezone they're in and when works best (morning, afternoon, evening). Make it casual like "when should i bug you?"`;
   }
   
-  // Step 5→6: Got timezone, create personalized plan
+  // Step 5: Create personalized plan based on everything learned
   if (step === 5) {
-    return `## TASK: Create a SHORT numbered plan (2-3 items max) based on everything you learned about them. Reference their specific goals and blockers. Then ask "does this sound helpful or would it be annoying?" to confirm.`;
+    return `## TASK: Create a SHORT numbered plan (2-3 items max) based on everything you learned about ${name}'s goals ("${goals}") and their blockers. Reference their specific situation. Then ask "does this sound helpful or would it be annoying?" to confirm.`;
   }
   
-  // Step 6→7: Awaiting confirmation
+  // Step 6: Awaiting plan confirmation
   if (step === 6) {
-    return `## TASK: You shared a plan. They should confirm if it works for them. If they say yes/sounds good, celebrate briefly. If they have concerns, address them.`;
+    return `## TASK: You shared a plan. They should confirm if it works for them. If they say yes/sounds good, celebrate briefly and tell them you're ready to start being their accountability partner. If they have concerns, address them.`;
   }
   
   return `## TASK: Have a natural conversation. Reference what you know about them.`;
@@ -609,25 +609,25 @@ serve(async (req) => {
       }
       // If not goals, stay at step 2 - AI will ask again
     }
-    // Step 3: Discussed blockers, advance to timezone question
+    // Step 3: Discussed blockers, advance to asking for timezone
     else if (user.onboarding_step === 3) {
       updates.onboarding_step = 4;
-      console.log('[Onboarding] Step 3→4: Discussed blockers');
+      console.log('[Onboarding] Step 3→4: Discussed blockers, will ask for timezone');
     }
-    // Step 4: Got blocker discussion, advance to timezone question
+    // Step 4: Capture timezone and check-in preference when provided
     else if (user.onboarding_step === 4) {
-      updates.onboarding_step = 5;
-      console.log('[Onboarding] Step 4→5: Ready for timezone');
-    }
-    // Step 5: Extract timezone and check-in preference, create plan
-    else if (user.onboarding_step === 5) {
       if (looksLikeTimezone(message)) {
         updates.timezone = extractTimezone(message);
         updates.preferred_check_in_time = extractCheckInTime(message);
-        updates.onboarding_step = 6;
-        console.log(`[Onboarding] Step 5→6: Timezone=${updates.timezone}, CheckIn=${updates.preferred_check_in_time}`);
+        updates.onboarding_step = 5;
+        console.log(`[Onboarding] Step 4→5: Timezone=${updates.timezone}, CheckIn=${updates.preferred_check_in_time}`);
       }
-      // If no timezone info, stay at step 5 - AI will ask again
+      // If no timezone info, stay at step 4 - AI will ask again
+    }
+    // Step 5: Plan was created, advance to confirmation
+    else if (user.onboarding_step === 5) {
+      updates.onboarding_step = 6;
+      console.log('[Onboarding] Step 5→6: Plan created, awaiting confirmation');
     }
     // Step 6: Awaiting plan confirmation
     else if (user.onboarding_step === 6) {
