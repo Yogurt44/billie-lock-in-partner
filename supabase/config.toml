@@ -3,6 +3,9 @@ project_id = "vqfcnpmvzvukdfoitzue"
 [functions.sms-inbound]
 verify_jwt = false
 
+[functions.sms-inbound-bird]
+verify_jwt = false
+
 [functions.create-checkout]
 verify_jwt = false
 
