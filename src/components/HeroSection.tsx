@@ -2,7 +2,6 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { MessageCircle } from "lucide-react";
 
-const BILLIE_NUMBER = "+1 (888) 205-1848";
 const BILLIE_SMS_LINK = "sms:+18882051848";
 
 export const HeroSection = () => {
@@ -23,16 +22,6 @@ export const HeroSection = () => {
           transition={{ duration: 0.6 }}
           className="max-w-3xl mx-auto"
         >
-          {/* Badge */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-frost border border-ice/30 mb-6"
-          >
-            <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Text to Start</span>
-          </motion.div>
-
           {/* Intro copy */}
           <motion.p
             initial={{ opacity: 0, y: 10 }}
@@ -48,36 +37,20 @@ export const HeroSection = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="text-6xl sm:text-7xl md:text-8xl font-bold tracking-tight text-foreground mb-6"
+            className="text-6xl sm:text-7xl md:text-8xl font-bold tracking-tight text-foreground mb-8"
           >
             BILLIE
           </motion.h1>
 
-          {/* Subtitle */}
+          {/* Subtitle - simplified */}
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="text-xl sm:text-2xl text-muted-foreground font-medium mb-8 max-w-xl mx-auto"
+            className="text-xl sm:text-2xl text-muted-foreground font-medium mb-10 max-w-xl mx-auto"
           >
-            your accounta<span className="text-ice font-bold">BILLIE</span>ty partner — keeping you locked in, daily.
+            keeping you locked in, daily.
           </motion.p>
-
-          {/* Phone Number Display */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.35 }}
-            className="mb-8"
-          >
-            <p className="text-sm text-muted-foreground mb-2">text BILLIE at</p>
-            <a 
-              href={BILLIE_SMS_LINK}
-              className="text-3xl sm:text-4xl font-bold text-ice hover:text-ice/80 transition-colors"
-            >
-              {BILLIE_NUMBER}
-            </a>
-          </motion.div>
 
           {/* SMS CTA */}
           <motion.div
