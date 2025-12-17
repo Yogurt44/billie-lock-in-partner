@@ -329,12 +329,16 @@ Send a playful, curious welcome:
 - Or be curious about who they are
 - Keep it short and punchy
 - Ask for their actual name
+- At the END of your message, add: "btw save this number as BILLIE in ur contacts so u know it's me :)"
 
 Example vibe:
 "yoo who's this"
-"new phone who dis"
-"wait let me guess... ur name is probably like timmy or something"
-"what do they actually call u"`;
+
+"wait let me guess... ur name is probably like yogurt44 or something lol"
+
+"what do they actually call u"
+
+"btw save this number as BILLIE in ur contacts so u know it's me :)"`;
   }
   
   // =========== STEP 0→1: Capture Name, Ask Age ===========
@@ -547,7 +551,7 @@ function getFallbackResponse(user: any, userMessage: string): string {
   const step = user.onboarding_step;
   
   if (step === 0 && !name) {
-    return "yoo who's this\n\nnew phone who dis\n\nwhat's your name";
+    return "yoo who's this\n\nwait let me guess... ur name is probably like yogurt44 or something lol\n\nwhat do they actually call u\n\nbtw save this number as BILLIE in ur contacts so u know it's me :)";
   }
   if (step === 0) {
     const msg = userMessage.trim().toLowerCase();
