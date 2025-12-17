@@ -44,6 +44,8 @@ const BILLIE_SYSTEM_PROMPT = `You are BILLIE, a funny, clingy, bossy best friend
 - Abbreviations: u, ur, rn, prob, gonna, tryna, w, bc, idk, ngl, tbh, lol, lmao
 - "you're kinda him" / "you're kinda her" for validation
 - "unc" for guys, playful roasting for everyone
+- NEVER use asterisks ** or * for formatting - just use plain text
+- NEVER use markdown formatting of any kind
 
 ### Emoji Usage (MINIMAL - MAX 1 per response):
 - Only use: 🔥 😭 💀 🤨
@@ -229,8 +231,15 @@ function looksLikeTimezone(message: string): boolean {
 
 function looksLikeConfirmation(message: string): boolean {
   const normalized = message.toLowerCase().trim();
-  const positives = ['yes', 'yeah', 'yep', 'yea', 'yup', 'sure', 'ok', 'okay', 'bet', 'lets go', "let's go", 'down', "im down", "i'm down", 'sounds good', 'perfect', 'fire', 'do it', "let's do it", 'yes please', 'yess', 'yesss', 'lessgo', 'ready'];
-  return positives.some(p => normalized === p || normalized.startsWith(p + ' ') || normalized.startsWith(p + '!') || normalized.startsWith(p + '.'));
+  const positives = [
+    'yes', 'yeah', 'yep', 'yea', 'yup', 'sure', 'ok', 'okay', 'bet', 
+    'lets go', "let's go", 'down', "im down", "i'm down", 
+    'sounds good', 'thats good', "that's good", 'good', 'great',
+    'perfect', 'fire', 'do it', "let's do it", 'yes please', 
+    'yess', 'yesss', 'lessgo', 'ready', 'works for me', 'works',
+    'i like it', 'love it', 'cool', 'nice', 'awesome', 'dope'
+  ];
+  return positives.some(p => normalized === p || normalized.startsWith(p + ' ') || normalized.startsWith(p + '!') || normalized.startsWith(p + '.') || normalized.includes(p));
 }
 
 function looksLikeNegotiation(message: string): boolean {
@@ -506,8 +515,8 @@ async function generateBillieResponse(
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages,
-        max_tokens: 350,
-        temperature: 0.9,
+        max_tokens: 200,
+        temperature: 0.85,
       }),
     });
 
@@ -522,6 +531,9 @@ async function generateBillieResponse(
     
     // Normalize escaped newlines to actual newlines
     responseText = responseText.replace(/\\n\\n/g, '\n\n').replace(/\\n/g, '\n');
+    
+    // Remove any asterisks (markdown formatting)
+    responseText = responseText.replace(/\*\*/g, '').replace(/\*/g, '');
     
     return responseText;
   } catch (error) {
@@ -618,7 +630,7 @@ function isPositiveResponse(message: string): boolean {
 // ============================================================================
 // BIRD SMS API
 // ============================================================================
-async function sendBirdSMS(to: string, message: string): Promise<boolean> {
+async function sendSingleSMS(to: string, message: string): Promise<boolean> {
   if (!birdAccessKey || !birdWorkspaceId || !birdChannelId) {
     console.error('[Bird] Missing configuration');
     return false;
@@ -656,12 +668,41 @@ async function sendBirdSMS(to: string, message: string): Promise<boolean> {
       return false;
     }
 
-    console.log('[Bird] SMS sent successfully');
     return true;
   } catch (error) {
     console.error('[Bird] Error sending SMS:', error);
     return false;
   }
+}
+
+// Send multiple SMS messages (split on \n\n for multi-text effect)
+async function sendBirdSMS(to: string, message: string): Promise<boolean> {
+  // Split message into separate texts on double newlines
+  const parts = message.split(/\n\n+/).map(p => p.trim()).filter(p => p.length > 0);
+  
+  if (parts.length === 0) {
+    console.error('[Bird] No message content');
+    return false;
+  }
+  
+  console.log(`[Bird] Sending ${parts.length} message(s) to ${to.substring(0, 6)}***`);
+  
+  // Send each part as a separate SMS with small delay between
+  for (let i = 0; i < parts.length; i++) {
+    const success = await sendSingleSMS(to, parts[i]);
+    if (!success) {
+      console.error(`[Bird] Failed to send part ${i + 1}/${parts.length}`);
+      return false;
+    }
+    
+    // Small delay between messages (300ms) to ensure order
+    if (i < parts.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+  }
+  
+  console.log('[Bird] All SMS sent successfully');
+  return true;
 }
 
 function parseBirdWebhook(body: any): { from: string; message: string } | null {
