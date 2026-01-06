@@ -1,6 +1,6 @@
 import { HeroSection } from "@/components/HeroSection";
 import { HowItWorksSection } from "@/components/HowItWorksSection";
-import { PhoneMockup } from "@/components/PhoneMockup";
+import { MarketingScreenshots } from "@/components/MarketingScreenshots";
 import { FooterSection } from "@/components/FooterSection";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -10,7 +10,7 @@ const Index = () => {
       <ThemeToggle />
       <HeroSection />
       <HowItWorksSection />
-      <PhoneMockup />
+      <MarketingScreenshots />
       <FooterSection />
     </main>
   );
