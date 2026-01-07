@@ -181,6 +181,59 @@ function parseNumberedGoals(message: string): string[] {
   return goals.slice(0, 5);
 }
 
+// Extract check-in times from BILLIE's plan message
+// Looks for patterns like "7am", "9:00am", "5pm", "14:00" etc.
+function extractCheckInTimes(planMessage: string): { morning?: string; midday?: string; evening?: string } {
+  const times: { hour: number; original: string }[] = [];
+  
+  // Match various time formats: 7am, 7:00am, 7 am, 14:00, etc.
+  const timePatterns = [
+    /\b(\d{1,2}):?(\d{2})?\s*(am|pm)\b/gi,  // 7am, 7:00am, 7 pm
+    /\b(\d{1,2}):(\d{2})\b/g,                // 14:00, 09:00 (24hr format)
+  ];
+  
+  for (const pattern of timePatterns) {
+    const matches = planMessage.matchAll(pattern);
+    for (const match of matches) {
+      let hour = parseInt(match[1], 10);
+      const minutes = match[2] ? parseInt(match[2], 10) : 0;
+      const ampm = match[3]?.toLowerCase();
+      
+      // Convert to 24hr format
+      if (ampm === 'pm' && hour !== 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+      
+      // Skip invalid hours
+      if (hour >= 0 && hour <= 23) {
+        const formattedTime = `${hour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        times.push({ hour, original: formattedTime });
+      }
+    }
+  }
+  
+  // Remove duplicates and sort by hour
+  const uniqueTimes = [...new Map(times.map(t => [t.hour, t])).values()]
+    .sort((a, b) => a.hour - b.hour);
+  
+  if (uniqueTimes.length === 0) return {};
+  
+  // Categorize times into morning (5-11), midday (12-17), evening (18-23)
+  const result: { morning?: string; midday?: string; evening?: string } = {};
+  
+  for (const time of uniqueTimes) {
+    if (time.hour >= 5 && time.hour < 12 && !result.morning) {
+      result.morning = time.original;
+    } else if (time.hour >= 12 && time.hour < 18 && !result.midday) {
+      result.midday = time.original;
+    } else if (time.hour >= 18 && time.hour <= 23 && !result.evening) {
+      result.evening = time.original;
+    }
+  }
+  
+  console.log(`[Plan] Extracted times from plan: ${JSON.stringify(result)}`);
+  return result;
+}
+
 // ============================================================================
 // DATABASE OPERATIONS
 // ============================================================================
@@ -914,9 +967,24 @@ text me back and let's do this properly this time`;
       }
     }
     // Step 5: Plan created, advance to confirmation
+    // Also extract check-in times from the LAST BILLIE message (the plan)
     else if (user.onboarding_step === 5) {
       updates.onboarding_step = 6;
-      console.log('[Onboarding] 5→6: Plan shared');
+      
+      // Get BILLIE's last message (the plan) to extract times
+      const lastBillieMsg = conversationHistory
+        .filter(m => m.role === 'billie')
+        .slice(-1)[0];
+      
+      if (lastBillieMsg?.content) {
+        const extractedTimes = extractCheckInTimes(lastBillieMsg.content);
+        if (extractedTimes.morning) updates.morning_check_in_time = extractedTimes.morning;
+        if (extractedTimes.midday) updates.midday_check_in_time = extractedTimes.midday;
+        if (extractedTimes.evening) updates.evening_check_in_time = extractedTimes.evening;
+        console.log(`[Onboarding] 5→6: Plan shared, times: ${JSON.stringify(extractedTimes)}`);
+      } else {
+        console.log('[Onboarding] 5→6: Plan shared (no times extracted)');
+      }
     }
     // Step 6: Check for plan confirmation
     else if (user.onboarding_step === 6) {
