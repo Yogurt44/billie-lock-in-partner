@@ -107,6 +107,45 @@ function sanitizeInput(input: string, maxLength: number = 500): string {
   return input.trim().slice(0, maxLength).replace(/[\x00-\x1F\x7F]/g, '');
 }
 
+// Check if input looks like an actual name (not a random message)
+function looksLikeName(message: string): boolean {
+  const normalized = message.toLowerCase().trim();
+  
+  // Common non-name responses to filter out
+  const notNames = [
+    'hi', 'hey', 'hello', 'yo', 'sup', 'hii', 'heyo', 'heyy', 'helo',
+    'ok', 'okay', 'k', 'sure', 'yes', 'no', 'yeah', 'nah', 'yea', 'yep', 'nope',
+    'what', 'huh', 'hmm', 'um', 'idk', 'lol', 'lmao', 'haha', 'bruh',
+    'thanks', 'thx', 'ty', 'cool', 'nice', 'bet', 'word', 'aight',
+    'stop', 'quit', 'unsubscribe', 'help', 'status', 'reset',
+    'u were supposed', 'you were supposed', 'remind me', 'wtf', 'wth'
+  ];
+  
+  // Reject if it's a known non-name
+  if (notNames.some(n => normalized === n || normalized.startsWith(n + ' '))) {
+    return false;
+  }
+  
+  // Reject if it's too long (names are usually short)
+  const words = message.trim().split(/\s+/);
+  if (words.length > 4) return false;
+  
+  // Reject if it's a full sentence (has too many words or looks like a complaint)
+  if (message.length > 30) return false;
+  
+  // Reject if it contains question marks or has complaint keywords
+  if (/\?|supposed|remind|where|when|why|what|how/.test(normalized)) {
+    return false;
+  }
+  
+  // Accept if it looks like a name (1-3 words, reasonable length)
+  if (words.length >= 1 && words.length <= 3 && message.length >= 2 && message.length <= 25) {
+    return true;
+  }
+  
+  return false;
+}
+
 function looksLikeGoals(message: string): boolean {
   const normalized = message.toLowerCase().trim();
   const nonGoals = [
@@ -775,6 +814,54 @@ serve(async (req) => {
     
     console.log(`[SMS] User step=${user.onboarding_step}, history=${conversationHistory.length} msgs`);
 
+    // =========== SPECIAL COMMANDS ===========
+    if (normalizedMessage === 'status') {
+      const statusMsg = `📊 your BILLIE status:
+
+name: ${user.name || 'not set'}
+step: ${user.onboarding_step}/7 ${user.onboarding_step >= 7 ? '✅' : '🔄'}
+subscription: ${user.subscription_status || 'none'}
+timezone: ${user.timezone || 'not set'}
+streak: ${user.current_streak || 0} days
+goals: ${user.goals ? user.goals.slice(0, 100) + '...' : 'not set'}
+
+text RESET to start over`;
+      
+      await sendBirdSMS(from, statusMsg);
+      return new Response(JSON.stringify({ success: true, command: 'status' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    if (normalizedMessage === 'reset') {
+      // Delete messages and reset user
+      await supabase.from('billie_messages').delete().eq('user_id', user.id);
+      await supabase.from('billie_goals').delete().eq('user_id', user.id);
+      await supabase.from('billie_users').update({
+        name: null,
+        goals: null,
+        onboarding_step: 0,
+        timezone: 'America/New_York',
+        subscription_status: 'none',
+        current_streak: 0,
+        longest_streak: 0,
+        awaiting_check_in: false,
+        awaiting_response: false,
+        updated_at: new Date().toISOString()
+      }).eq('id', user.id);
+      
+      const resetMsg = `ok i just wiped everything 🧹
+
+we're starting fresh. hi, i'm BILLIE
+
+text me back and let's do this properly this time`;
+      
+      await sendBirdSMS(from, resetMsg);
+      return new Response(JSON.stringify({ success: true, command: 'reset' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Save incoming message
     await saveMessage(user.id, 'user', message || '[empty message]');
 
@@ -782,11 +869,20 @@ serve(async (req) => {
     let updates: Record<string, any> = {};
     let justCompletedOnboarding = false;
 
-    // Step 0: Capture name from first reply
+    // Step 0: Capture name from first reply (only if it looks like a name!)
     if (user.onboarding_step === 0 && !user.name && conversationHistory.length > 0) {
-      updates.name = sanitizeInput(message, 50);
-      updates.onboarding_step = 1;
-      console.log(`[Onboarding] 0→1: Name="${updates.name}"`);
+      if (looksLikeName(message)) {
+        // Capitalize first letter of each word
+        const cleanName = message.trim().split(' ')
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+        updates.name = sanitizeInput(cleanName, 50);
+        updates.onboarding_step = 1;
+        console.log(`[Onboarding] 0→1: Name="${updates.name}"`);
+      } else {
+        // Not a valid name - AI will re-prompt
+        console.log(`[Onboarding] Step 0: "${message}" doesn't look like a name, re-prompting`);
+      }
     }
     // Step 1: Got age, advance to goals question
     else if (user.onboarding_step === 1) {
