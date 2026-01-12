@@ -12,6 +12,62 @@ const logStep = (step: string, details?: any) => {
   console.log(`[Webhook] ${step}${detailsStr}`);
 };
 
+// Send SMS via Bird API
+async function sendCelebrationSMS(phone: string, userName: string | null): Promise<boolean> {
+  const birdAccessKey = Deno.env.get('BIRD_ACCESS_KEY');
+  const birdWorkspaceId = Deno.env.get('BIRD_WORKSPACE_ID');
+  const birdChannelId = Deno.env.get('BIRD_CHANNEL_ID');
+
+  if (!birdAccessKey || !birdWorkspaceId || !birdChannelId) {
+    logStep("WARNING: Bird SMS not configured, skipping celebration SMS");
+    return false;
+  }
+
+  // Skip app device tokens (push notification users - handled differently)
+  if (phone.startsWith('app_device_')) {
+    logStep("Skipping SMS for app user", { phone });
+    // For app users, we could send a push notification instead
+    // For now, just skip - they'll get the confirmation in-app
+    return true;
+  }
+
+  const name = userName || 'bestie';
+  const messages = [
+    `YOOO ${name} you actually did it!! 🔥`,
+    `ok we're locked in now. i'm officially ur accountability partner and i'm not letting you slack`,
+    `let's gooo - text me whenever you're ready to crush your goals!`
+  ];
+
+  try {
+    const response = await fetch(
+      `https://api.bird.com/workspaces/${birdWorkspaceId}/channels/${birdChannelId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${birdAccessKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          receiver: { contacts: [{ identifierValue: phone }] },
+          body: { type: 'text', text: { text: messages.join('\n\n') } },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logStep("ERROR: Failed to send celebration SMS", { status: response.status, error: errorText });
+      return false;
+    }
+
+    logStep("SUCCESS: Sent celebration SMS", { phone: phone.slice(-4) });
+    return true;
+  } catch (error) {
+    logStep("ERROR: Exception sending SMS", { error: error instanceof Error ? error.message : error });
+    return false;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -77,43 +133,40 @@ serve(async (req) => {
           metadata: session.metadata 
         });
 
-        if (!userId) {
-          // Try to find user by customer ID as fallback
+        let targetUserId = userId;
+        let targetUser: { id: string; phone: string; name: string | null } | null = null;
+
+        // Try to find user by metadata first, then by customer ID
+        if (!targetUserId) {
           logStep("No billie_user_id in metadata, trying customer lookup");
           const { data: userByCustomer } = await supabase
             .from('billie_users')
-            .select('id')
+            .select('id, phone, name')
             .eq('stripe_customer_id', customerId)
             .maybeSingle();
           
           if (userByCustomer) {
+            targetUserId = userByCustomer.id;
+            targetUser = userByCustomer;
             logStep("Found user by customer ID", { foundUserId: userByCustomer.id });
-            // Update subscription status
-            if (session.subscription) {
-              const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
-              const endDate = new Date(subscription.current_period_end * 1000);
-              
-              const { error: updateError } = await supabase
-                .from('billie_users')
-                .update({
-                  subscription_status: 'active',
-                  subscription_end: endDate.toISOString(),
-                })
-                .eq('id', userByCustomer.id);
-              
-              if (updateError) {
-                logStep("ERROR: Failed to update user by customer ID", { error: updateError });
-              } else {
-                logStep("Updated subscription via customer lookup", { userId: userByCustomer.id });
-              }
-            }
-          } else {
-            logStep("WARNING: Could not find user for checkout session");
           }
+        } else {
+          // Fetch user data for SMS
+          const { data: userData } = await supabase
+            .from('billie_users')
+            .select('id, phone, name')
+            .eq('id', targetUserId)
+            .maybeSingle();
+          if (userData) targetUser = userData;
+        }
+
+        if (!targetUserId) {
+          logStep("WARNING: Could not find user for checkout session");
           break;
         }
 
         // Get subscription details
+        let endDate: Date | null = null;
         if (session.subscription) {
           try {
             const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
@@ -126,43 +179,38 @@ serve(async (req) => {
             });
             
             if (endTimestamp && !isNaN(endTimestamp)) {
-              const endDate = new Date(endTimestamp * 1000);
-              
-              const { error: updateError } = await supabase
-                .from('billie_users')
-                .update({
-                  subscription_status: 'active',
-                  subscription_end: endDate.toISOString(),
-                  stripe_customer_id: customerId,
-                })
-                .eq('id', userId);
-
-              if (updateError) {
-                logStep("ERROR: Failed to update user", { userId, error: updateError });
-              } else {
-                logStep("SUCCESS: User subscription activated", { userId, until: endDate.toISOString() });
-              }
-            } else {
-              logStep("ERROR: Invalid period end timestamp", { endTimestamp });
+              endDate = new Date(endTimestamp * 1000);
             }
           } catch (subError) {
             logStep("ERROR: Failed to retrieve subscription", { error: subError });
           }
+        }
+
+        // Update user subscription status
+        const updateData: Record<string, any> = {
+          subscription_status: 'active',
+          stripe_customer_id: customerId,
+        };
+        if (endDate) {
+          updateData.subscription_end = endDate.toISOString();
+        }
+
+        const { error: updateError } = await supabase
+          .from('billie_users')
+          .update(updateData)
+          .eq('id', targetUserId);
+
+        if (updateError) {
+          logStep("ERROR: Failed to update user", { userId: targetUserId, error: updateError });
         } else {
-          // One-time payment or subscription not available yet - just mark as active
-          logStep("No subscription ID, marking user as active");
-          const { error: updateError } = await supabase
-            .from('billie_users')
-            .update({
-              subscription_status: 'active',
-              stripe_customer_id: customerId,
-            })
-            .eq('id', userId);
-          
-          if (updateError) {
-            logStep("ERROR: Failed to update user", { userId, error: updateError });
-          } else {
-            logStep("SUCCESS: User marked active (no subscription)", { userId });
+          logStep("SUCCESS: User subscription activated", { 
+            userId: targetUserId, 
+            until: endDate?.toISOString() || 'no end date' 
+          });
+
+          // Send celebration SMS!
+          if (targetUser) {
+            await sendCelebrationSMS(targetUser.phone, targetUser.name);
           }
         }
         break;
@@ -196,7 +244,15 @@ serve(async (req) => {
 
         if (targetUserId) {
           const status = subscription.status === 'active' ? 'active' : 'inactive';
-          const endDate = new Date(subscription.current_period_end * 1000);
+          const endTimestamp = subscription.current_period_end;
+          
+          // Validate timestamp before creating date
+          if (!endTimestamp || isNaN(endTimestamp)) {
+            logStep("ERROR: Invalid period end timestamp", { endTimestamp });
+            break;
+          }
+          
+          const endDate = new Date(endTimestamp * 1000);
 
           const { error: updateError } = await supabase
             .from('billie_users')
@@ -225,19 +281,43 @@ serve(async (req) => {
         logStep("Processing customer.subscription.deleted", { userId, customerId });
 
         let targetUserId = userId;
+        let currentUser: { subscription_status: string | null; subscription_end: string | null } | null = null;
+        
         if (!targetUserId) {
           const { data: userByCustomer } = await supabase
             .from('billie_users')
-            .select('id')
+            .select('id, subscription_status, subscription_end')
             .eq('stripe_customer_id', customerId)
             .maybeSingle();
           
           if (userByCustomer) {
             targetUserId = userByCustomer.id;
+            currentUser = userByCustomer;
           }
+        } else {
+          const { data: userData } = await supabase
+            .from('billie_users')
+            .select('subscription_status, subscription_end')
+            .eq('id', targetUserId)
+            .maybeSingle();
+          if (userData) currentUser = userData;
         }
 
-        if (targetUserId) {
+        if (targetUserId && currentUser) {
+          // IMPORTANT: Only cancel if the subscription isn't currently active with future end date
+          // This prevents stale deletion events from overwriting new subscriptions
+          const now = new Date();
+          const subEnd = currentUser.subscription_end ? new Date(currentUser.subscription_end) : null;
+          
+          if (currentUser.subscription_status === 'active' && subEnd && subEnd > now) {
+            logStep("SKIPPING: User has active subscription with future end date, ignoring stale deletion event", {
+              targetUserId,
+              currentStatus: currentUser.subscription_status,
+              subscriptionEnd: currentUser.subscription_end
+            });
+            break;
+          }
+
           const { error: updateError } = await supabase
             .from('billie_users')
             .update({ subscription_status: 'canceled' })
