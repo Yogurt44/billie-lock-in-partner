@@ -39,6 +39,22 @@ const PROACTIVE_MESSAGES = {
     (name: string) => `hey ${name} just checking you're still alive`,
     (name: string) => `${name}!! respond or i'm assuming you're doom scrolling rn`,
   ],
+  // Re-engagement messages for users who stopped responding
+  reengagement_1day: [
+    (name: string) => `${name}... you ghosted me yesterday 😭\n\neverything ok? text me back`,
+    (name: string) => `${name} where'd you go?? we were making progress!\n\ndon't give up now`,
+    (name: string) => `yo ${name} i noticed you went quiet\n\nno judgment just checking in fr`,
+  ],
+  reengagement_3day: [
+    (name: string) => `${name} it's been a few days...\n\ni'm still here whenever you're ready to get back on track 💪`,
+    (name: string) => `${name}!! 3 days of silence??\n\nlisten i get it life happens but don't let your goals slide`,
+    (name: string) => `hey ${name} just wanted to remind you i'm still ur accountability partner\n\nwhenever you're ready`,
+  ],
+  reengagement_7day: [
+    (name: string) => `${name} it's been a week... i miss our check-ins ngl 😭\n\none text and we're back. what do you say?`,
+    (name: string) => `${name}! a whole week?\n\nseriously tho - if you wanna restart fresh just say "restart" and we're good`,
+    (name: string) => `hey ${name} haven't heard from you in a while\n\njust wanted you to know i'm still here rooting for you 🔥`,
+  ],
 };
 
 function getRandomMessage(category: keyof typeof PROACTIVE_MESSAGES, name: string, goal?: string): string {
@@ -46,10 +62,40 @@ function getRandomMessage(category: keyof typeof PROACTIVE_MESSAGES, name: strin
   const randomIndex = Math.floor(Math.random() * messages.length);
   const messageFn = messages[randomIndex];
   
-  if (category === 'followup') {
+  // Re-engagement and followup messages only take name
+  if (category === 'followup' || category.startsWith('reengagement')) {
     return (messageFn as (name: string) => string)(name);
   }
   return (messageFn as (name: string, goal: string) => string)(name, goal || 'your goals');
+}
+
+// Calculate days since last user message
+function getDaysSinceLastMessage(lastMessageDate: string | null): number {
+  if (!lastMessageDate) return 999; // Never messaged
+  const last = new Date(lastMessageDate);
+  const now = new Date();
+  return Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// Determine which re-engagement message to send (if any)
+function getReengagementType(daysSinceLastMessage: number, lastReengagementSent: string | null): 'reengagement_1day' | 'reengagement_3day' | 'reengagement_7day' | null {
+  // Don't spam - only send one re-engagement per tier
+  const lastSent = lastReengagementSent ? new Date(lastReengagementSent) : null;
+  const now = new Date();
+  const hoursSinceLastReengagement = lastSent ? (now.getTime() - lastSent.getTime()) / (1000 * 60 * 60) : 999;
+  
+  // Only send re-engagement once per 24 hours max
+  if (hoursSinceLastReengagement < 24) return null;
+  
+  if (daysSinceLastMessage >= 7 && daysSinceLastMessage < 14) {
+    return 'reengagement_7day';
+  } else if (daysSinceLastMessage >= 3 && daysSinceLastMessage < 7) {
+    return 'reengagement_3day';
+  } else if (daysSinceLastMessage >= 1 && daysSinceLastMessage < 3) {
+    return 'reengagement_1day';
+  }
+  
+  return null;
 }
 
 function getUserLocalHour(now: Date, timezone: string): number {
@@ -163,10 +209,23 @@ serve(async (req) => {
     const eligibleUsers = (users || []).filter(u => u.push_token || u.phone);
     console.log(`[CRON] Found ${eligibleUsers.length} eligible users (push: ${users?.filter(u => u.push_token).length || 0}, SMS: ${users?.filter(u => !u.push_token && u.phone).length || 0})`);
 
+    // For each user, get their last message date for re-engagement
+    const userLastMessages: Map<string, string | null> = new Map();
+    for (const user of eligibleUsers) {
+      const { data: lastMsg } = await supabase
+        .from("billie_messages")
+        .select("created_at")
+        .eq("user_id", user.id)
+        .eq("role", "user")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      userLastMessages.set(user.id, lastMsg?.created_at || null);
+    }
 
     const checkInsSent: string[] = [];
     const followUpsSent: string[] = [];
-
+    const reengagementsSent: string[] = [];
     const smsCheckInsSent: string[] = [];
 
     for (const user of eligibleUsers) {
@@ -182,8 +241,38 @@ serve(async (req) => {
         const goalText = user.goals ? user.goals.split("\n")[0] : "your goals";
         const hasPushToken = !!user.push_token;
         const hasPhone = !!user.phone;
+        const lastUserMessageDate = userLastMessages.get(user.id) || null;
+        const daysSinceLastMessage = getDaysSinceLastMessage(lastUserMessageDate);
 
-        // Check for follow-up first (if user hasn't responded)
+        // Check for RE-ENGAGEMENT first (user hasn't responded in 1+ days)
+        const reengagementType = getReengagementType(daysSinceLastMessage, user.last_notification_at);
+        if (reengagementType) {
+          console.log(`[CRON] Sending ${reengagementType} to ${name} (${user.id}) - ${daysSinceLastMessage} days silent`);
+          
+          const reengageMessage = getRandomMessage(reengagementType, name);
+          
+          if (hasPushToken) {
+            await sendPushNotification(user.push_token, reengageMessage);
+          } else if (hasPhone) {
+            await sendBirdSMS(user.phone, reengageMessage);
+            smsCheckInsSent.push(user.id);
+          }
+          
+          await supabase
+            .from("billie_users")
+            .update({ last_notification_at: now.toISOString() })
+            .eq("id", user.id);
+          
+          // Save to conversation history
+          await supabase
+            .from("billie_messages")
+            .insert({ user_id: user.id, role: 'billie', content: reengageMessage });
+          
+          reengagementsSent.push(user.id);
+          continue; // Don't send regular check-in
+        }
+
+        // Check for follow-up (user hasn't responded to recent notification)
         if (shouldSendFollowUp(user.last_notification_at, user.awaiting_response)) {
           console.log(`[CRON] Sending follow-up to ${name} (${user.id}) via ${hasPushToken ? 'push' : 'SMS'}`);
           
@@ -263,7 +352,7 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[CRON] Sent ${checkInsSent.length} check-ins (${smsCheckInsSent.length} via SMS), ${followUpsSent.length} follow-ups`);
+    console.log(`[CRON] Sent ${checkInsSent.length} check-ins (${smsCheckInsSent.length} via SMS), ${followUpsSent.length} follow-ups, ${reengagementsSent.length} re-engagements`);
 
     return new Response(
       JSON.stringify({ 
@@ -271,8 +360,10 @@ serve(async (req) => {
         check_ins_sent: checkInsSent.length,
         sms_check_ins_sent: smsCheckInsSent.length,
         follow_ups_sent: followUpsSent.length,
+        reengagements_sent: reengagementsSent.length,
         check_in_user_ids: checkInsSent,
         follow_up_user_ids: followUpsSent,
+        reengagement_user_ids: reengagementsSent,
         sms_user_ids: smsCheckInsSent
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -914,6 +914,97 @@ text me back and let's do this properly this time`;
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    
+    // =========== CHECK-IN TIME CHANGE COMMANDS ===========
+    const timeChangeMatch = normalizedMessage.match(/(?:change|set|update|make)\s+(?:my\s+)?(?:(morning|midday|evening|afternoon)\s+)?(?:check[- ]?in|time|check in time)(?:\s+(?:to|at))?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (timeChangeMatch && user.onboarding_step >= 7) {
+      let period = timeChangeMatch[1]?.toLowerCase() || 'morning';
+      let hour = parseInt(timeChangeMatch[2], 10);
+      const minutes = timeChangeMatch[3] ? parseInt(timeChangeMatch[3], 10) : 0;
+      const ampm = timeChangeMatch[4]?.toLowerCase();
+      
+      // Map afternoon to midday
+      if (period === 'afternoon') period = 'midday';
+      
+      // Convert to 24hr format
+      if (ampm === 'pm' && hour !== 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+      
+      // If no AM/PM specified, assume AM for morning, PM for others
+      if (!ampm) {
+        if (period === 'morning' && hour >= 1 && hour <= 11) {
+          // Keep as is (morning hours)
+        } else if (period === 'midday' && hour >= 1 && hour <= 6) {
+          hour += 12; // Assume PM for midday
+        } else if (period === 'evening' && hour >= 1 && hour <= 11) {
+          hour += 12; // Assume PM for evening
+        }
+      }
+      
+      const formattedTime = `${hour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      const displayTime = `${hour > 12 ? hour - 12 : hour === 0 ? 12 : hour}${minutes > 0 ? ':' + minutes.toString().padStart(2, '0') : ''}${hour >= 12 ? 'pm' : 'am'}`;
+      
+      // Update the appropriate time field
+      const updateField = period === 'morning' ? 'morning_check_in_time' 
+                        : period === 'midday' ? 'midday_check_in_time' 
+                        : 'evening_check_in_time';
+      
+      await supabase.from('billie_users').update({ [updateField]: formattedTime }).eq('id', user.id);
+      
+      const confirmMsg = `bet! changed your ${period} check-in to ${displayTime} 🔥
+
+i'll hit you up at that time from now on`;
+      
+      await saveMessage(user.id, 'user', message);
+      await saveMessage(user.id, 'billie', confirmMsg);
+      await sendBirdSMS(from, confirmMsg);
+      
+      return new Response(JSON.stringify({ success: true, command: 'time_change', period, time: formattedTime }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    // Simple time change patterns like "check in at 8am" or "wake me up at 7am"
+    const simpleTimeMatch = normalizedMessage.match(/(?:check[- ]?in|wake|text|message|hit)\s+(?:me\s+)?(?:up\s+)?(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    if (simpleTimeMatch && user.onboarding_step >= 7) {
+      let hour = parseInt(simpleTimeMatch[1], 10);
+      const minutes = simpleTimeMatch[2] ? parseInt(simpleTimeMatch[2], 10) : 0;
+      const ampm = simpleTimeMatch[3]?.toLowerCase();
+      
+      if (ampm === 'pm' && hour !== 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+      
+      // Determine which period based on hour
+      let period: string;
+      let updateField: string;
+      if (hour >= 5 && hour < 12) {
+        period = 'morning';
+        updateField = 'morning_check_in_time';
+      } else if (hour >= 12 && hour < 17) {
+        period = 'midday';
+        updateField = 'midday_check_in_time';
+      } else {
+        period = 'evening';
+        updateField = 'evening_check_in_time';
+      }
+      
+      const formattedTime = `${hour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      const displayTime = `${hour > 12 ? hour - 12 : hour === 0 ? 12 : hour}${minutes > 0 ? ':' + minutes.toString().padStart(2, '0') : ''}${hour >= 12 ? 'pm' : 'am'}`;
+      
+      await supabase.from('billie_users').update({ [updateField]: formattedTime }).eq('id', user.id);
+      
+      const confirmMsg = `got it! your ${period} check-in is now ${displayTime} ✅
+
+anything else you wanna change?`;
+      
+      await saveMessage(user.id, 'user', message);
+      await saveMessage(user.id, 'billie', confirmMsg);
+      await sendBirdSMS(from, confirmMsg);
+      
+      return new Response(JSON.stringify({ success: true, command: 'time_change', period, time: formattedTime }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Save incoming message
     await saveMessage(user.id, 'user', message || '[empty message]');
