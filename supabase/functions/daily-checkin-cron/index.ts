@@ -187,17 +187,16 @@ serve(async (req) => {
     const now = new Date();
     console.log(`[CRON] Current UTC time: ${now.toISOString()}`);
 
-    // Get all active subscribed users (with push tokens OR phone numbers for SMS)
+    // Get all users who completed onboarding (subscription_status active OR in trial period)
     const { data: users, error } = await supabase
       .from("billie_users")
       .select(`
         id, name, phone, push_token, timezone, goals,
-        subscription_status, subscription_end,
+        subscription_status, subscription_end, created_at,
         morning_check_in_time, midday_check_in_time, evening_check_in_time,
         check_in_frequency, last_notification_at, awaiting_response,
         onboarding_step
       `)
-      .eq("subscription_status", "active")
       .gte("onboarding_step", 7); // Only users who completed onboarding
 
     if (error) {
@@ -205,9 +204,9 @@ serve(async (req) => {
       throw error;
     }
 
-    // Filter to users who have either push_token OR phone (for SMS)
-    const eligibleUsers = (users || []).filter(u => u.push_token || u.phone);
-    console.log(`[CRON] Found ${eligibleUsers.length} eligible users (push: ${users?.filter(u => u.push_token).length || 0}, SMS: ${users?.filter(u => !u.push_token && u.phone).length || 0})`);
+    // Filter to users who have either push_token OR valid phone (starts with +)
+    const eligibleUsers = (users || []).filter(u => u.push_token || (u.phone && u.phone.startsWith('+')));
+    console.log(`[CRON] Found ${eligibleUsers.length} eligible users (push: ${eligibleUsers.filter(u => u.push_token).length}, SMS: ${eligibleUsers.filter(u => !u.push_token && u.phone?.startsWith('+')).length})`);
 
     // For each user, get their last message date for re-engagement
     const userLastMessages: Map<string, string | null> = new Map();
@@ -230,9 +229,17 @@ serve(async (req) => {
 
     for (const user of eligibleUsers) {
       try {
-        // Check if subscription is still valid
-        if (user.subscription_end && new Date(user.subscription_end) < now) {
-          console.log(`[CRON] User ${user.id} subscription expired, skipping`);
+        // Check if subscription is valid OR user is in trial period (first 3 days after signup)
+        const isSubscribed = user.subscription_status === 'active' && 
+          (!user.subscription_end || new Date(user.subscription_end) >= now);
+        
+        // Trial period: 3 days from account creation
+        const createdAt = new Date(user.created_at);
+        const daysSinceSignup = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+        const isInTrial = daysSinceSignup <= 3;
+        
+        if (!isSubscribed && !isInTrial) {
+          console.log(`[CRON] User ${user.id} not subscribed and trial expired (${daysSinceSignup} days), skipping`);
           continue;
         }
 
@@ -240,7 +247,7 @@ serve(async (req) => {
         const name = user.name || "bestie";
         const goalText = user.goals ? user.goals.split("\n")[0] : "your goals";
         const hasPushToken = !!user.push_token;
-        const hasPhone = !!user.phone;
+        const hasPhone = !!user.phone && user.phone.startsWith('+');
         const lastUserMessageDate = userLastMessages.get(user.id) || null;
         const daysSinceLastMessage = getDaysSinceLastMessage(lastUserMessageDate);
 
