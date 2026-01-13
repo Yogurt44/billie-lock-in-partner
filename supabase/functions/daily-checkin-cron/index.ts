@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import Stripe from "https://esm.sh/stripe@18.5.0";
 import * as jose from "https://deno.land/x/jose@v4.14.4/index.ts";
 
 const corsHeaders = {
@@ -12,6 +13,51 @@ const BIRD_ACCESS_KEY = Deno.env.get("BIRD_ACCESS_KEY");
 const BIRD_WORKSPACE_ID = Deno.env.get("BIRD_WORKSPACE_ID");
 const BIRD_CHANNEL_ID = Deno.env.get("BIRD_CHANNEL_ID");
 const BIRD_FROM_NUMBER = "+18882051848"; // BILLIE's toll-free number
+
+// Stripe sync - check subscription status directly with Stripe
+async function syncSubscriptionFromStripe(
+  supabase: any,
+  userId: string,
+  stripeCustomerId: string
+): Promise<{ isActive: boolean; subscriptionEnd: string | null }> {
+  const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+  if (!stripeKey) {
+    console.log("[CRON] Stripe key not configured, skipping sync");
+    return { isActive: false, subscriptionEnd: null };
+  }
+
+  try {
+    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    
+    const subscriptions = await stripe.subscriptions.list({
+      customer: stripeCustomerId,
+      status: "active",
+      limit: 1,
+    });
+
+    if (subscriptions.data.length > 0) {
+      const subscription = subscriptions.data[0];
+      const endDate = new Date(subscription.current_period_end * 1000).toISOString();
+      
+      // Update user in database
+      await supabase
+        .from("billie_users")
+        .update({
+          subscription_status: "active",
+          subscription_end: endDate,
+        })
+        .eq("id", userId);
+      
+      console.log(`[CRON] Synced subscription for user ${userId}: active until ${endDate}`);
+      return { isActive: true, subscriptionEnd: endDate };
+    }
+    
+    return { isActive: false, subscriptionEnd: null };
+  } catch (error) {
+    console.error(`[CRON] Stripe sync error for user ${userId}:`, error);
+    return { isActive: false, subscriptionEnd: null };
+  }
+}
 
 // Proactive conversation starters based on goals
 const PROACTIVE_MESSAGES = {
@@ -192,7 +238,7 @@ serve(async (req) => {
       .from("billie_users")
       .select(`
         id, name, phone, push_token, timezone, goals,
-        subscription_status, subscription_end, created_at,
+        subscription_status, subscription_end, created_at, stripe_customer_id,
         morning_check_in_time, midday_check_in_time, evening_check_in_time,
         check_in_frequency, last_notification_at, awaiting_response,
         onboarding_step
@@ -230,8 +276,18 @@ serve(async (req) => {
     for (const user of eligibleUsers) {
       try {
         // Check if subscription is valid OR user is in trial period (first 3 days after signup)
-        const isSubscribed = user.subscription_status === 'active' && 
+        let isSubscribed = user.subscription_status === 'active' && 
           (!user.subscription_end || new Date(user.subscription_end) >= now);
+        
+        // FALLBACK: If user has stripe_customer_id but status is 'none', check Stripe directly
+        if (!isSubscribed && user.stripe_customer_id && user.subscription_status !== 'active') {
+          console.log(`[CRON] User ${user.id} has Stripe customer but no active status, checking Stripe...`);
+          const syncResult = await syncSubscriptionFromStripe(supabase, user.id, user.stripe_customer_id);
+          if (syncResult.isActive) {
+            isSubscribed = true;
+            console.log(`[CRON] Subscription synced from Stripe for user ${user.id}`);
+          }
+        }
         
         // Trial period: 3 days from account creation
         const createdAt = new Date(user.created_at);
